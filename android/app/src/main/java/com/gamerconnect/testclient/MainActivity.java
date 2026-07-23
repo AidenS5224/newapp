@@ -32,8 +32,11 @@ public class MainActivity extends Activity {
     private static final int GREEN = Color.rgb(52, 211, 115);
 
     private EditText apiInput;
+    private EditText loginInput;
+    private EditText passwordInput;
     private LinearLayout content;
     private String apiBase = "http://10.0.2.2:8080";
+    private String sessionToken = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,12 +67,39 @@ public class MainActivity extends Activity {
         apiInput.setPadding(18, 12, 18, 12);
         root.addView(apiInput, matchWrap());
 
+        loginInput = new EditText(this);
+        loginInput.setSingleLine(true);
+        loginInput.setText("NovaPulse");
+        loginInput.setTextColor(TEXT);
+        loginInput.setHintTextColor(MUTED);
+        loginInput.setHint("Email or handle");
+        loginInput.setBackgroundColor(PANEL);
+        loginInput.setPadding(18, 12, 18, 12);
+        root.addView(loginInput, matchWrap());
+
+        passwordInput = new EditText(this);
+        passwordInput.setSingleLine(true);
+        passwordInput.setText("testpass123");
+        passwordInput.setTextColor(TEXT);
+        passwordInput.setHintTextColor(MUTED);
+        passwordInput.setHint("Password");
+        passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        passwordInput.setBackgroundColor(PANEL);
+        passwordInput.setPadding(18, 12, 18, 12);
+        root.addView(passwordInput, matchWrap());
+
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER_VERTICAL);
         Button refresh = button("Refresh", PURPLE);
         refresh.setOnClickListener(v -> loadAll());
+        Button login = button("Login", GREEN);
+        login.setOnClickListener(v -> login());
+        Button signup = button("Sign Up", PURPLE);
+        signup.setOnClickListener(v -> signup());
         actions.addView(refresh, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        actions.addView(login, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        actions.addView(signup, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         root.addView(actions);
 
         ScrollView scroll = new ScrollView(this);
@@ -78,6 +108,59 @@ public class MainActivity extends Activity {
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         return root;
+    }
+
+    private void login() {
+        apiBase = apiInput.getText().toString().trim();
+        new Thread(() -> {
+            try {
+                JSONObject payload = new JSONObject();
+                payload.put("emailOrHandle", loginInput.getText().toString().trim());
+                payload.put("password", passwordInput.getText().toString());
+                JSONObject response = postJson("/api/auth/login", payload, "");
+                sessionToken = response.optString("token");
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Logged in", Toast.LENGTH_SHORT).show();
+                    loadAll();
+                });
+            } catch (Exception ex) {
+                runOnUiThread(() -> Toast.makeText(this, "Login failed: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        }).start();
+    }
+
+    private void signup() {
+        apiBase = apiInput.getText().toString().trim();
+        new Thread(() -> {
+            try {
+                String login = loginInput.getText().toString().trim();
+                String email = login.contains("@") ? login : login.toLowerCase() + "@example.local";
+                String handle = login.contains("@") ? login.substring(0, login.indexOf("@")) : login;
+                JSONObject payload = new JSONObject();
+                payload.put("email", email);
+                payload.put("handle", handle);
+                payload.put("password", passwordInput.getText().toString());
+                payload.put("region", "Australia");
+                payload.put("timezone", "AEST");
+                payload.put("rank", "Unranked");
+                payload.put("bio", "Testing Gamer Connect from Android.");
+                payload.put("platforms", new JSONArray().put("PC"));
+                payload.put("topGames", new JSONArray().put("apex-legends"));
+                payload.put("linkedAccounts", new JSONObject().put("discord", handle + "#0001"));
+                payload.put("infoStacks", new JSONArray().put(new JSONObject()
+                        .put("label", "Discord")
+                        .put("value", handle + "#0001")
+                        .put("private", true)));
+                JSONObject response = postJson("/api/auth/signup", payload, "");
+                sessionToken = response.optString("token");
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Signed up", Toast.LENGTH_SHORT).show();
+                    loadAll();
+                });
+            } catch (Exception ex) {
+                runOnUiThread(() -> Toast.makeText(this, "Sign up failed: " + ex.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        }).start();
     }
 
     private void loadAll() {
@@ -112,6 +195,7 @@ public class MainActivity extends Activity {
             String details = player.optString("rank")
                     + " | " + player.optString("region")
                     + " | " + player.optInt("compatibility") + "% compatible\n"
+                    + protectedLine(player)
                     + player.optString("bio");
             LinearLayout playerCard = card(player.optString("handle"), details, PURPLE);
             Button connect = button("Connect", GREEN);
@@ -144,14 +228,24 @@ public class MainActivity extends Activity {
         }
     }
 
+    private String protectedLine(JSONObject player) {
+        if (player.optBoolean("protectedVisible")) {
+            JSONObject accounts = player.optJSONObject("linkedAccounts");
+            return accounts == null ? "" : "Protected info unlocked: " + accounts.toString() + "\n";
+        }
+        if (player.optBoolean("hasProtectedInfo")) {
+            return "Protected info unlocks after an approved connection\n";
+        }
+        return "";
+    }
+
     private void sendConnect(String targetId) {
         new Thread(() -> {
             try {
                 JSONObject payload = new JSONObject();
-                payload.put("fromPlayerId", "p_novapulse");
                 payload.put("toPlayerId", targetId);
                 payload.put("message", "Want to squad up from Android?");
-                JSONObject response = postJson("/api/connections", payload);
+                JSONObject response = postJson("/api/connections", payload, sessionToken);
                 String status = response.getJSONObject("connectionRequest").optString("status");
                 runOnUiThread(() -> Toast.makeText(this, "Connection request: " + status, Toast.LENGTH_SHORT).show());
             } catch (Exception ex) {
@@ -163,17 +257,27 @@ public class MainActivity extends Activity {
     private JSONObject getJson(String path) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(apiBase + path).openConnection();
         conn.setRequestMethod("GET");
+        if (sessionToken != null && !sessionToken.isEmpty()) {
+            conn.setRequestProperty("Authorization", "Bearer " + sessionToken);
+        }
         conn.setConnectTimeout(5000);
         conn.setReadTimeout(5000);
         return readJson(conn);
     }
 
     private JSONObject postJson(String path, JSONObject payload) throws Exception {
+        return postJson(path, payload, sessionToken);
+    }
+
+    private JSONObject postJson(String path, JSONObject payload, String token) throws Exception {
         byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
         HttpURLConnection conn = (HttpURLConnection) new URL(apiBase + path).openConnection();
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);
         conn.setRequestProperty("Content-Type", "application/json");
+        if (token != null && !token.isEmpty()) {
+            conn.setRequestProperty("Authorization", "Bearer " + token);
+        }
         conn.setFixedLengthStreamingMode(body.length);
         try (OutputStream out = conn.getOutputStream()) {
             out.write(body);

@@ -62,6 +62,36 @@ python3 test_api.py
 
 The test starts the API, checks seeded endpoints, creates a connection request, and shuts the server down.
 
+## Auth And Protected Info
+
+Seeded local accounts:
+
+```text
+NovaPulse  / testpass123
+GhostRider / testpass123
+ZaneFPS    / testpass123
+```
+
+Useful routes:
+
+```text
+POST /api/auth/signup
+POST /api/auth/login
+POST /api/auth/logout
+GET  /api/me
+POST /api/me/profile
+```
+
+Use the returned session token on protected routes:
+
+```text
+Authorization: Bearer YOUR_SESSION_TOKEN
+```
+
+Discovery only returns linked account summaries publicly. Actual Discord, Steam,
+Tracker Network, Xbox, Riot, and protected profile values are shown to the
+profile owner, the owner panel, or players with an accepted connection.
+
 ## Control Terminal
 
 From the project root:

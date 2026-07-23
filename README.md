@@ -12,6 +12,8 @@ First working build path for the Gamer Connect product:
 - Player discovery filters by game/platform
 - Compatibility score for discovery cards
 - Connection request creation
+- Sign up, login, logout, and bearer-token sessions
+- Protected linked account/contact info that only unlocks for the player, the owner panel, or accepted connections
 - Private owner dashboard with analytics and backend controls
 - Local control terminal for inspecting and editing test data
 - CORS enabled for later web/PWA clients
@@ -81,6 +83,13 @@ http://PI_IP_ADDRESS:8080
 
 The Android project uses Java and basic Android SDK components only. It has no third-party app dependencies.
 
+The seeded test login is:
+
+```text
+Handle: NovaPulse
+Password: testpass123
+```
+
 ## API Routes
 
 ```text
@@ -92,8 +101,21 @@ GET  /api/players?platform=PC
 GET  /api/players/{id}
 GET  /api/lfg
 GET  /api/squads
+GET  /api/me
+POST /api/auth/signup
+POST /api/auth/login
+POST /api/auth/logout
+POST /api/me/profile
 POST /api/connections
 ```
+
+Authenticated routes use:
+
+```text
+Authorization: Bearer YOUR_SESSION_TOKEN
+```
+
+Public player discovery shows whether Discord, Steam, Tracker Network, Xbox, Riot, and other platform accounts are connected, but hides the actual handles. Protected values are visible to the profile owner and to players with an accepted connection.
 
 The owner panel loads at `/owner`. The private admin API routes require
 `X-Admin-Token`, `Authorization: Bearer TOKEN`, or the `?token=` query value:

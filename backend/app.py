@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 import secrets
 import sqlite3
 import time
@@ -16,6 +17,7 @@ from admin_panel import OWNER_PANEL_HTML
 
 APP_NAME = "Gamer Connect API"
 APP_VERSION = "0.1"
+SESSION_TTL_SECONDS = 60 * 60 * 24 * 30
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = Path(os.environ.get("GAMER_CONNECT_DB", DATA_DIR / "gamer_connect.sqlite3"))
@@ -57,8 +59,35 @@ def parse_json(value: str | None, fallback: Any) -> Any:
         return fallback
 
 
-def row_to_player(row: dict[str, Any]) -> dict[str, Any]:
-    return {
+def json_text(value: Any) -> str:
+    return json.dumps(value if value is not None else {})
+
+
+def hash_password(password: str, salt: str | None = None) -> str:
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 120_000)
+    return f"pbkdf2_sha256${salt}${digest.hex()}"
+
+
+def verify_password(password: str, stored: str) -> bool:
+    try:
+        algorithm, salt, expected = stored.split("$", 2)
+    except ValueError:
+        return False
+    if algorithm != "pbkdf2_sha256":
+        return False
+    actual = hash_password(password, salt).split("$", 2)[-1]
+    return secrets.compare_digest(actual, expected)
+
+
+def public_linked_accounts(accounts: dict[str, Any]) -> dict[str, Any]:
+    return {name: {"connected": bool(value)} for name, value in accounts.items()}
+
+
+def row_to_player(row: dict[str, Any], include_protected: bool = False) -> dict[str, Any]:
+    linked_accounts = parse_json(row["linked_accounts"], {})
+    protected_info = parse_json(row.get("protected_info"), {})
+    player = {
         "id": row["id"],
         "handle": row["handle"],
         "displayName": row["display_name"],
@@ -74,9 +103,19 @@ def row_to_player(row: dict[str, Any]) -> dict[str, Any]:
         "avatarUrl": row["avatar_url"],
         "online": bool(row["online"]),
         "stats": parse_json(row["stats"], {}),
-        "linkedAccounts": parse_json(row["linked_accounts"], {}),
+        "linkedAccounts": linked_accounts if include_protected else public_linked_accounts(linked_accounts),
+        "protectedInfo": protected_info if include_protected else {},
+        "infoStacks": parse_json(row.get("info_stacks"), []),
+        "hasProtectedInfo": bool(linked_accounts or protected_info),
         "compatibility": row.get("compatibility"),
     }
+    return player
+
+
+def ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def init_db() -> None:
@@ -100,6 +139,24 @@ def init_db() -> None:
                 online INTEGER NOT NULL DEFAULT 0,
                 stats TEXT NOT NULL,
                 linked_accounts TEXT NOT NULL,
+                protected_info TEXT NOT NULL DEFAULT '{}',
+                info_stacks TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS user_accounts (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                handle TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                player_id TEXT NOT NULL UNIQUE REFERENCES players(id) ON DELETE CASCADE,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS sessions (
+                token TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES user_accounts(id) ON DELETE CASCADE,
+                expires_at INTEGER NOT NULL,
                 created_at INTEGER NOT NULL
             );
 
@@ -145,12 +202,15 @@ def init_db() -> None:
             );
             """
         )
+        ensure_column(conn, "players", "protected_info", "TEXT NOT NULL DEFAULT '{}'")
+        ensure_column(conn, "players", "info_stacks", "TEXT NOT NULL DEFAULT '[]'")
         seed(conn)
 
 
 def seed(conn: sqlite3.Connection) -> None:
     existing = conn.execute("SELECT COUNT(*) AS total FROM players").fetchone()["total"]
     if existing:
+        seed_test_accounts(conn)
         return
 
     now = int(time.time())
@@ -183,6 +243,12 @@ def seed(conn: sqlite3.Connection) -> None:
             "online": 1,
             "stats": {"winRate": "57%", "kd": "1.32", "games": "2.1K", "positive": "94%"},
             "linked_accounts": {"discord": "NovaPulse#2042", "steam": "novapulse", "trackerNetwork": "apex/NovaPulse"},
+            "protected_info": {"phone": "", "notes": "Share Discord after connection is approved."},
+            "info_stacks": [
+                {"label": "Main Game", "value": "Apex Legends Ranked", "private": False},
+                {"label": "Discord", "value": "NovaPulse#2042", "private": True},
+                {"label": "Tracker Network", "value": "apex/NovaPulse", "private": True},
+            ],
         },
         {
             "id": "p_ghost",
@@ -201,6 +267,12 @@ def seed(conn: sqlite3.Connection) -> None:
             "online": 0,
             "stats": {"winRate": "54%", "kd": "1.19", "games": "1.4K", "positive": "91%"},
             "linked_accounts": {"discord": "GhostRider#7741", "xbox": "GhostRiderAU"},
+            "protected_info": {"phone": "", "notes": "Prefers Discord voice after squad approval."},
+            "info_stacks": [
+                {"label": "Role", "value": "IGL / shot caller", "private": False},
+                {"label": "Discord", "value": "GhostRider#7741", "private": True},
+                {"label": "Xbox", "value": "GhostRiderAU", "private": True},
+            ],
         },
         {
             "id": "p_zane",
@@ -219,6 +291,12 @@ def seed(conn: sqlite3.Connection) -> None:
             "online": 1,
             "stats": {"winRate": "61%", "kd": "1.41", "games": "980", "positive": "88%"},
             "linked_accounts": {"discord": "ZaneFPS#1188", "riot": "ZaneFPS#OCE"},
+            "protected_info": {"phone": "", "notes": "Riot ID stays protected until matched."},
+            "info_stacks": [
+                {"label": "Role", "value": "Entry fragger", "private": False},
+                {"label": "Discord", "value": "ZaneFPS#1188", "private": True},
+                {"label": "Riot", "value": "ZaneFPS#OCE", "private": True},
+            ],
         },
     ]
     conn.executemany(
@@ -226,12 +304,12 @@ def seed(conn: sqlite3.Connection) -> None:
         INSERT INTO players (
             id, handle, display_name, age, region, timezone, platforms, top_games,
             rank, play_style, availability, bio, avatar_url, online, stats,
-            linked_accounts, created_at
+            linked_accounts, protected_info, info_stacks, created_at
         )
         VALUES (
             :id, :handle, :display_name, :age, :region, :timezone, :platforms, :top_games,
             :rank, :play_style, :availability, :bio, :avatar_url, :online, :stats,
-            :linked_accounts, :created_at
+            :linked_accounts, :protected_info, :info_stacks, :created_at
         )
         """,
         [
@@ -243,11 +321,15 @@ def seed(conn: sqlite3.Connection) -> None:
                 "availability": json.dumps(player["availability"]),
                 "stats": json.dumps(player["stats"]),
                 "linked_accounts": json.dumps(player["linked_accounts"]),
+                "protected_info": json.dumps(player["protected_info"]),
+                "info_stacks": json.dumps(player["info_stacks"]),
                 "created_at": now,
             }
             for player in players
         ],
     )
+
+    seed_test_accounts(conn)
 
     conn.executemany(
         """
@@ -272,6 +354,22 @@ def seed(conn: sqlite3.Connection) -> None:
     )
 
 
+def seed_test_accounts(conn: sqlite3.Connection) -> None:
+    now = int(time.time())
+    seed_accounts = [
+        ("u_novapulse", "nova@example.local", "NovaPulse", "p_novapulse"),
+        ("u_ghost", "ghost@example.local", "GhostRider", "p_ghost"),
+        ("u_zane", "zane@example.local", "ZaneFPS", "p_zane"),
+    ]
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO user_accounts (id, email, handle, password_hash, player_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        [(uid, email, handle, hash_password("testpass123"), player_id, now) for uid, email, handle, player_id in seed_accounts],
+    )
+
+
 def list_games(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute("SELECT * FROM games ORDER BY name").fetchall()
     return [
@@ -286,11 +384,75 @@ def list_games(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     ]
 
 
-def list_players(conn: sqlite3.Connection, query: dict[str, list[str]]) -> list[dict[str, Any]]:
+def issue_session(conn: sqlite3.Connection, user_id: str) -> str:
+    token = secrets.token_urlsafe(32)
+    now = int(time.time())
+    conn.execute(
+        "INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
+        (token, user_id, now + SESSION_TTL_SECONDS, now),
+    )
+    return token
+
+
+def session_user(conn: sqlite3.Connection, token: str | None) -> dict[str, Any] | None:
+    if not token:
+        return None
+    row = conn.execute(
+        """
+        SELECT ua.*
+        FROM sessions s
+        JOIN user_accounts ua ON ua.id = s.user_id
+        WHERE s.token = ? AND s.expires_at > ?
+        """,
+        (token, int(time.time())),
+    ).fetchone()
+    return row
+
+
+def can_view_protected(conn: sqlite3.Connection, viewer_player_id: str | None, target_player_id: str) -> bool:
+    if not viewer_player_id:
+        return False
+    if viewer_player_id == target_player_id:
+        return True
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM connection_requests
+        WHERE status = 'accepted'
+          AND (
+            (from_player_id = ? AND to_player_id = ?)
+            OR (from_player_id = ? AND to_player_id = ?)
+          )
+        LIMIT 1
+        """,
+        (viewer_player_id, target_player_id, target_player_id, viewer_player_id),
+    ).fetchone()
+    return bool(row)
+
+
+def visible_info_stacks(stacks: list[dict[str, Any]], include_protected: bool) -> list[dict[str, Any]]:
+    visible = []
+    for stack in stacks:
+        if stack.get("private") and not include_protected:
+            visible.append({"label": stack.get("label"), "private": True, "protected": True})
+        else:
+            visible.append(stack)
+    return visible
+
+
+def player_for_view(conn: sqlite3.Connection, row: dict[str, Any], viewer_player_id: str | None = None, force_private: bool = False) -> dict[str, Any]:
+    include_protected = force_private or can_view_protected(conn, viewer_player_id, row["id"])
+    player = row_to_player(row, include_protected=include_protected)
+    player["infoStacks"] = visible_info_stacks(player["infoStacks"], include_protected)
+    player["protectedVisible"] = include_protected
+    return player
+
+
+def list_players(conn: sqlite3.Connection, query: dict[str, list[str]], viewer_player_id: str | None = None, force_private: bool = False) -> list[dict[str, Any]]:
     game = query.get("game", [None])[0]
     platform = query.get("platform", [None])[0]
     rows = conn.execute("SELECT * FROM players ORDER BY online DESC, handle").fetchall()
-    players = [row_to_player(row) for row in rows]
+    players = [player_for_view(conn, row, viewer_player_id, force_private) for row in rows]
     if game:
         players = [player for player in players if game in player["topGames"]]
     if platform:
@@ -298,6 +460,97 @@ def list_players(conn: sqlite3.Connection, query: dict[str, list[str]]) -> list[
     for player in players:
         player["compatibility"] = compatibility_score(player)
     return players
+
+
+def user_payload(conn: sqlite3.Connection, user: dict[str, Any]) -> dict[str, Any]:
+    row = conn.execute("SELECT * FROM players WHERE id = ?", (user["player_id"],)).fetchone()
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "handle": user["handle"],
+        "player": player_for_view(conn, row, user["player_id"], force_private=True) if row else None,
+    }
+
+
+def safe_player_id(handle: str) -> str:
+    slug = "".join(char.lower() if char.isalnum() else "_" for char in handle).strip("_")
+    return f"p_{slug or secrets.token_hex(4)}"
+
+
+def create_account(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[str, Any]:
+    email = str(payload.get("email", "")).strip().lower()
+    handle = str(payload.get("handle", "")).strip()
+    password = str(payload.get("password", ""))
+    if not email or "@" not in email:
+        raise ValueError("A valid email is required")
+    if len(handle) < 3:
+        raise ValueError("Handle must be at least 3 characters")
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters")
+
+    now = int(time.time())
+    player_id = safe_player_id(handle)
+    while conn.execute("SELECT 1 FROM players WHERE id = ?", (player_id,)).fetchone():
+        player_id = f"{safe_player_id(handle)}_{secrets.token_hex(2)}"
+
+    profile = {
+        "id": player_id,
+        "handle": handle,
+        "display_name": str(payload.get("displayName") or handle).strip(),
+        "age": int(payload.get("age", 18)),
+        "region": str(payload.get("region") or "Australia").strip(),
+        "timezone": str(payload.get("timezone") or "AEST").strip(),
+        "platforms": payload.get("platforms") or ["PC"],
+        "top_games": payload.get("topGames") or [],
+        "rank": str(payload.get("rank") or "Unranked").strip(),
+        "play_style": payload.get("playStyle") or [],
+        "availability": payload.get("availability") or {},
+        "bio": str(payload.get("bio") or "New Gamer Connect player.").strip(),
+        "avatar_url": payload.get("avatarUrl"),
+        "online": 1,
+        "stats": payload.get("stats") or {},
+        "linked_accounts": payload.get("linkedAccounts") or {},
+        "protected_info": payload.get("protectedInfo") or {},
+        "info_stacks": payload.get("infoStacks") or [],
+        "created_at": now,
+    }
+    conn.execute(
+        """
+        INSERT INTO players (
+            id, handle, display_name, age, region, timezone, platforms, top_games,
+            rank, play_style, availability, bio, avatar_url, online, stats,
+            linked_accounts, protected_info, info_stacks, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            profile["id"],
+            profile["handle"],
+            profile["display_name"],
+            profile["age"],
+            profile["region"],
+            profile["timezone"],
+            json_text(profile["platforms"]),
+            json_text(profile["top_games"]),
+            profile["rank"],
+            json_text(profile["play_style"]),
+            json_text(profile["availability"]),
+            profile["bio"],
+            profile["avatar_url"],
+            profile["online"],
+            json_text(profile["stats"]),
+            json_text(profile["linked_accounts"]),
+            json_text(profile["protected_info"]),
+            json_text(profile["info_stacks"]),
+            profile["created_at"],
+        ),
+    )
+    user_id = f"u_{secrets.token_hex(8)}"
+    conn.execute(
+        "INSERT INTO user_accounts (id, email, handle, password_hash, player_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, email, handle, hash_password(password), player_id, now),
+    )
+    return conn.execute("SELECT * FROM user_accounts WHERE id = ?", (user_id,)).fetchone()
 
 
 def compatibility_score(player: dict[str, Any]) -> int:
@@ -411,7 +664,7 @@ def top_games(players: list[dict[str, Any]], games: list[dict[str, Any]]) -> lis
 
 
 def admin_overview(conn: sqlite3.Connection) -> dict[str, Any]:
-    players = list_players(conn, {})
+    players = list_players(conn, {}, force_private=True)
     games = list_games(conn)
     lfg_posts = list_lfg(conn)
     squads = list_squads(conn)
@@ -455,6 +708,8 @@ def reset_database() -> None:
             DROP TABLE IF EXISTS connection_requests;
             DROP TABLE IF EXISTS squads;
             DROP TABLE IF EXISTS lfg_posts;
+            DROP TABLE IF EXISTS sessions;
+            DROP TABLE IF EXISTS user_accounts;
             DROP TABLE IF EXISTS games;
             DROP TABLE IF EXISTS players;
             """
@@ -479,6 +734,12 @@ class ApiHandler(BaseHTTPRequestHandler):
                     self.send_html(OWNER_PANEL_HTML)
                 elif parsed.path == "/api/health":
                     self.send_json({"ok": True, "app": APP_NAME, "time": int(time.time())})
+                elif parsed.path == "/api/me":
+                    user = self.current_user(conn)
+                    if not user:
+                        self.send_error_json(HTTPStatus.UNAUTHORIZED, "Login required")
+                        return
+                    self.send_json({"user": user_payload(conn, user)})
                 elif parsed.path == "/api/admin/overview":
                     if not self.is_admin(query):
                         return
@@ -490,14 +751,18 @@ class ApiHandler(BaseHTTPRequestHandler):
                 elif parsed.path == "/api/games":
                     self.send_json({"games": list_games(conn)})
                 elif parsed.path == "/api/players":
-                    self.send_json({"players": list_players(conn, query)})
+                    user = self.current_user(conn)
+                    viewer_player_id = user["player_id"] if user else None
+                    self.send_json({"players": list_players(conn, query, viewer_player_id)})
                 elif parsed.path.startswith("/api/players/"):
+                    user = self.current_user(conn)
+                    viewer_player_id = user["player_id"] if user else None
                     player_id = parsed.path.rsplit("/", 1)[-1]
                     row = conn.execute("SELECT * FROM players WHERE id = ?", (player_id,)).fetchone()
                     if not row:
                         self.send_error_json(HTTPStatus.NOT_FOUND, "Player not found")
                         return
-                    player = row_to_player(row)
+                    player = player_for_view(conn, row, viewer_player_id)
                     player["compatibility"] = compatibility_score(player)
                     self.send_json({"player": player})
                 elif parsed.path == "/api/lfg":
@@ -520,7 +785,36 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "message": "Database reset"})
                 return
             with db() as conn:
-                if parsed.path == "/api/admin/player-online":
+                if parsed.path == "/api/auth/signup":
+                    user = create_account(conn, payload)
+                    token = issue_session(conn, user["id"])
+                    self.send_json({"token": token, "user": user_payload(conn, user)}, HTTPStatus.CREATED)
+                elif parsed.path == "/api/auth/login":
+                    login = str(payload.get("emailOrHandle") or payload.get("email") or payload.get("handle") or "").strip()
+                    password = str(payload.get("password") or "")
+                    user = conn.execute(
+                        "SELECT * FROM user_accounts WHERE lower(email) = lower(?) OR lower(handle) = lower(?)",
+                        (login, login),
+                    ).fetchone()
+                    if not user or not verify_password(password, user["password_hash"]):
+                        self.send_error_json(HTTPStatus.UNAUTHORIZED, "Invalid email/handle or password")
+                        return
+                    token = issue_session(conn, user["id"])
+                    self.send_json({"token": token, "user": user_payload(conn, user)})
+                elif parsed.path == "/api/auth/logout":
+                    token = self.bearer_token()
+                    if token:
+                        conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+                    self.send_json({"ok": True})
+                elif parsed.path == "/api/me/profile":
+                    user = self.current_user(conn)
+                    if not user:
+                        self.send_error_json(HTTPStatus.UNAUTHORIZED, "Login required")
+                        return
+                    self.update_profile(conn, user["player_id"], payload)
+                    refreshed = conn.execute("SELECT * FROM user_accounts WHERE id = ?", (user["id"],)).fetchone()
+                    self.send_json({"user": user_payload(conn, refreshed)})
+                elif parsed.path == "/api/admin/player-online":
                     if not self.is_admin(parse_qs(parsed.query)):
                         return
                     player_id = payload.get("playerId")
@@ -547,7 +841,11 @@ class ApiHandler(BaseHTTPRequestHandler):
                         return
                     self.send_json({"requestId": request_id, "status": status})
                 elif parsed.path == "/api/connections":
-                    from_player_id = payload.get("fromPlayerId", "p_novapulse")
+                    user = self.current_user(conn)
+                    if not user:
+                        self.send_error_json(HTTPStatus.UNAUTHORIZED, "Login required")
+                        return
+                    from_player_id = user["player_id"]
                     to_player_id = payload.get("toPlayerId")
                     message = payload.get("message", "Want to squad up?")
                     if not to_player_id:
@@ -581,6 +879,45 @@ class ApiHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("JSON body must be an object")
         return payload
+
+    def bearer_token(self) -> str | None:
+        auth = self.headers.get("Authorization", "").strip()
+        if auth.lower().startswith("bearer "):
+            return auth[7:].strip()
+        token = self.headers.get("X-Session-Token", "").strip()
+        return token or None
+
+    def current_user(self, conn: sqlite3.Connection) -> dict[str, Any] | None:
+        return session_user(conn, self.bearer_token())
+
+    def update_profile(self, conn: sqlite3.Connection, player_id: str, payload: dict[str, Any]) -> None:
+        field_map = {
+            "displayName": ("display_name", str),
+            "age": ("age", int),
+            "region": ("region", str),
+            "timezone": ("timezone", str),
+            "platforms": ("platforms", json_text),
+            "topGames": ("top_games", json_text),
+            "rank": ("rank", str),
+            "playStyle": ("play_style", json_text),
+            "availability": ("availability", json_text),
+            "bio": ("bio", str),
+            "avatarUrl": ("avatar_url", lambda value: value),
+            "stats": ("stats", json_text),
+            "linkedAccounts": ("linked_accounts", json_text),
+            "protectedInfo": ("protected_info", json_text),
+            "infoStacks": ("info_stacks", json_text),
+        }
+        updates = []
+        values: list[Any] = []
+        for public_name, (column, caster) in field_map.items():
+            if public_name in payload:
+                updates.append(f"{column} = ?")
+                values.append(caster(payload[public_name]))
+        if not updates:
+            raise ValueError("No profile fields supplied")
+        values.append(player_id)
+        conn.execute(f"UPDATE players SET {', '.join(updates)} WHERE id = ?", values)
 
     def is_admin(self, query: dict[str, list[str]]) -> bool:
         expected = admin_token()
@@ -618,7 +955,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def send_cors_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Admin-Token, Authorization")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Admin-Token, X-Session-Token, Authorization")
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"[{self.log_date_time_string()}] {self.address_string()} {fmt % args}")
