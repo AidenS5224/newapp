@@ -14,6 +14,7 @@ supabase/migrations/0001_gamer_connect.sql
 supabase/migrations/0002_conversation_policy_helpers.sql
 supabase/migrations/0003_game_account_integrations.sql
 supabase/migrations/0004_r6data_provider.sql
+supabase/migrations/0005_fix_conversation_participant_rls_recursion.sql
 ```
 
 Supabase should own production auth, public profiles, protected linked accounts, feed posts, comments, reactions, conversations, and messages.
