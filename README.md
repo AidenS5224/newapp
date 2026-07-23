@@ -12,6 +12,7 @@ First working build path for the Gamer Connect product:
 - Player discovery filters by game/platform
 - Compatibility score for discovery cards
 - Connection request creation
+- Local control terminal for inspecting and editing test data
 - CORS enabled for later web/PWA clients
 
 ## Run Backend On Windows
@@ -100,3 +101,25 @@ Example connection request:
 - Add migrations once schema changes become frequent.
 - Add HTTPS/tunnel guidance before outside testers use the Pi.
 - Add Discord OAuth test integration.
+
+## Backend Control Terminal
+
+From `backend/`:
+
+```powershell
+python control.py
+```
+
+Useful commands:
+
+```text
+status
+players
+player p_novapulse
+online p_ghost on
+lfg
+squads
+connections
+export ./data/export.json
+reset
+```

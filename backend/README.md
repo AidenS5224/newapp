@@ -31,3 +31,30 @@ python3 test_api.py
 ```
 
 The test starts the API, checks seeded endpoints, creates a connection request, and shuts the server down.
+
+## Control Terminal
+
+Interactive admin/control shell:
+
+```bash
+python3 control.py
+```
+
+Windows:
+
+```powershell
+python control.py
+```
+
+One-off commands:
+
+```bash
+python3 control.py status
+python3 control.py players
+python3 control.py lfg
+python3 control.py connections
+python3 control.py online p_ghost on
+python3 control.py export ./data/export.json
+```
+
+The control terminal edits the same SQLite database used by the running backend.
