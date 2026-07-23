@@ -81,6 +81,7 @@ const state = {
   games: [],
   lfg: [],
   squads: [],
+  connections: [],
   conversations: [],
   privateProfile: null,
   linkedAccounts: [],
@@ -139,8 +140,14 @@ async function loadData() {
   state.lfg = lfg || [];
   state.squads = squads || [];
   if (state.session) {
+    state.connections = await loadConnections();
     state.conversations = await loadConversations();
     await loadPrivateProfile();
+  } else {
+    state.connections = [];
+    state.conversations = [];
+    state.privateProfile = null;
+    state.linkedAccounts = [];
   }
   renderShell();
 }
@@ -195,6 +202,18 @@ async function loadConversations() {
     .from("conversations")
     .select("*, conversation_participants(profile_id, role)")
     .order("updated_at", { ascending: false });
+  if (error) {
+    console.warn(error.message);
+    return [];
+  }
+  return data || [];
+}
+
+async function loadConnections() {
+  const { data, error } = await state.supabase
+    .from("connections")
+    .select("*")
+    .order("created_at", { ascending: false });
   if (error) {
     console.warn(error.message);
     return [];
@@ -361,27 +380,91 @@ function renderDiscovery() {
 }
 
 function renderPlayerCard(profile) {
+  const connection = connectionWith(profile.id);
+  const actions = renderConnectionActions(profile, connection);
   return `
     <div class="card">
       <span class="pill hot">${escapeHtml(profile.rank || "Unranked")}</span>
       <h3>${escapeHtml(profile.handle)}</h3>
       <p>${escapeHtml(profile.region || "Unknown")} - ${(profile.platforms || []).join(", ")}</p>
       <p>${escapeHtml(profile.bio || "No bio yet.")}</p>
+      ${connection ? `<p class="muted">${escapeHtml(connectionSummary(connection, profile.id))}</p>` : ""}
+      <div class="btn-row">${actions}</div>
+    </div>
+  `;
+}
+
+function renderConnectionActions(profile, connection) {
+  if (!state.profile) return `<button class="button dark" data-profile-tab>Sign In</button>`;
+  if (!connection) return `<button class="button green" data-connect="${profile.id}">Add Player</button>`;
+  if (connection.status === "accepted") {
+    return `<button class="button green" data-new-chat="${profile.id}">Message</button>`;
+  }
+  if (connection.status === "pending" && connection.to_profile_id === state.profile.id) {
+    return `
+      <button class="button green" data-connection-response="${connection.id}" data-status="accepted">Accept</button>
+      <button class="button dark" data-connection-response="${connection.id}" data-status="rejected">Decline</button>
+    `;
+  }
+  if (connection.status === "pending") return `<button class="button dark" disabled>Request Sent</button>`;
+  if (connection.status === "rejected" && connection.to_profile_id === state.profile.id) {
+    return `<button class="button green" data-connect="${profile.id}">Send Request</button>`;
+  }
+  return `<button class="button dark" disabled>Declined</button>`;
+}
+
+function renderMessages() {
+  const incoming = pendingIncomingConnections();
+  const outgoing = pendingOutgoingConnections();
+  const accepted = acceptedConnections();
+  return page("Messages", "Matched players, direct chats, and group conversations.", `
+    ${state.session ? `
+      <div class="grid two">
+        <div class="card">
+          <h3>Connection Requests</h3>
+          ${incoming.length ? incoming.map(renderIncomingConnection).join("") : `<p>No incoming requests.</p>`}
+        </div>
+        <div class="card">
+          <h3>Your People</h3>
+          ${accepted.length ? accepted.map(renderAcceptedConnection).join("") : `<p>Accepted players will show here.</p>`}
+          ${outgoing.length ? `<p class="muted">${outgoing.length} sent request(s) waiting for approval.</p>` : ""}
+        </div>
+      </div>
+    ` : `<div class="card notice"><h3>Sign in required</h3><p>Messages need a Supabase account.</p></div>`}
+    <div class="grid">
+      ${state.conversations.length ? state.conversations.map(renderConversation).join("") : `<div class="empty">No conversations yet.</div>`}
+    </div>
+  `);
+}
+
+function renderIncomingConnection(connection) {
+  const from = profileFor(connection.from_profile_id);
+  return `
+    <div class="connection-row">
+      <div>
+        <strong>${escapeHtml(from?.handle || "Player")}</strong>
+        <p>${escapeHtml(connection.message || "Wants to connect.")}</p>
+      </div>
       <div class="btn-row">
-        <button class="button green" data-connect="${profile.id}">Connect</button>
-        <button class="button dark" data-new-chat="${profile.id}">Message</button>
+        <button class="button green" data-connection-response="${connection.id}" data-status="accepted">Accept</button>
+        <button class="button dark" data-connection-response="${connection.id}" data-status="rejected">Decline</button>
       </div>
     </div>
   `;
 }
 
-function renderMessages() {
-  return page("Messages", "Matched players, direct chats, and group conversations.", `
-    ${state.session ? `<div class="card"><h3>Start New Chat</h3><p>Select Message on a player in Discovery/LFG, or start a group from a server page soon.</p></div>` : `<div class="card notice"><h3>Sign in required</h3><p>Messages need a Supabase account.</p></div>`}
-    <div class="grid">
-      ${state.conversations.length ? state.conversations.map(renderConversation).join("") : `<div class="empty">No conversations yet.</div>`}
+function renderAcceptedConnection(connection) {
+  const other = otherProfileForConnection(connection);
+  if (!other) return "";
+  return `
+    <div class="connection-row">
+      <div>
+        <strong>${escapeHtml(other.handle)}</strong>
+        <p>${escapeHtml(other.region || "Unknown region")} - ${escapeHtml(connection.status)}</p>
+      </div>
+      <button class="button green" data-new-chat="${other.id}">Message</button>
     </div>
-  `);
+  `;
 }
 
 function renderConversation(conversation) {
@@ -676,6 +759,7 @@ function bindPageEvents() {
   document.querySelector("[data-create-post]")?.addEventListener("submit", createPost);
   document.querySelectorAll("[data-like]").forEach(button => button.addEventListener("click", () => likePost(button.dataset.like)));
   document.querySelectorAll("[data-connect]").forEach(button => button.addEventListener("click", () => connectToPlayer(button.dataset.connect)));
+  document.querySelectorAll("[data-connection-response]").forEach(button => button.addEventListener("click", () => respondToConnection(button.dataset.connectionResponse, button.dataset.status)));
   document.querySelectorAll("[data-new-chat]").forEach(button => button.addEventListener("click", () => startChat(button.dataset.newChat)));
   document.querySelectorAll("[data-send-message]").forEach(form => form.addEventListener("submit", sendMessage));
 }
@@ -984,20 +1068,63 @@ async function likePost(postId) {
 
 async function connectToPlayer(profileId) {
   if (!state.profile) return alert("Sign in first.");
+  const existing = connectionWith(profileId);
+  if (existing?.status === "accepted") {
+    await startChat(profileId);
+    return;
+  }
+  if (existing?.status === "pending") {
+    alert(existing.to_profile_id === state.profile.id ? "They already sent you a request. Accept it to connect." : "Connection request already sent.");
+    return;
+  }
   const { error } = await state.supabase.from("connections").insert({
     from_profile_id: state.profile.id,
     to_profile_id: profileId,
     message: "Want to squad up?"
   });
   if (error) return alert(error.message);
-  alert("Connection request sent.");
+  state.profileMessage = "Connection request sent.";
+  await loadData();
 }
 
 async function startChat(profileId) {
   if (!state.profile) return alert("Sign in first.");
+  const connection = connectionWith(profileId);
+  if (!connection || connection.status !== "accepted") {
+    alert("You can message players after a connection is accepted.");
+    return;
+  }
+  await ensureDirectConversation(profileId);
+  state.tab = "messages";
+  await loadData();
+}
+
+async function respondToConnection(connectionId, status) {
+  if (!state.profile) return alert("Sign in first.");
+  if (!["accepted", "rejected"].includes(status)) return;
+  const connection = state.connections.find(item => item.id === connectionId);
+  if (!connection || connection.to_profile_id !== state.profile.id) {
+    alert("Only incoming requests can be updated.");
+    return;
+  }
+  const { error } = await state.supabase
+    .from("connections")
+    .update({ status })
+    .eq("id", connectionId);
+  if (error) return alert(error.message);
+  if (status === "accepted") {
+    await ensureDirectConversation(connection.from_profile_id);
+    state.tab = "messages";
+  }
+  await loadData();
+}
+
+async function ensureDirectConversation(profileId) {
+  const existing = directConversationWith(profileId);
+  if (existing) return existing;
   const target = profileFor(profileId);
   const { data: conversation, error } = await state.supabase.from("conversations").insert({
-    title: target?.handle || "New Chat",
+    title: target ? `${state.profile.handle} + ${target.handle}` : "Direct Chat",
     conversation_type: "direct",
     created_by_profile_id: state.profile.id
   }).select("*").single();
@@ -1007,8 +1134,7 @@ async function startChat(profileId) {
     { conversation_id: conversation.id, profile_id: profileId, role: "member" }
   ]);
   if (participantError) return alert(participantError.message);
-  state.tab = "messages";
-  await loadData();
+  return conversation;
 }
 
 async function sendMessage(event) {
@@ -1029,6 +1155,53 @@ async function sendMessage(event) {
 
 function profileFor(id) {
   return state.profiles.find(profile => profile.id === id);
+}
+
+function connectionWith(profileId) {
+  if (!state.profile) return null;
+  return state.connections.find(connection =>
+    (connection.from_profile_id === state.profile.id && connection.to_profile_id === profileId) ||
+    (connection.from_profile_id === profileId && connection.to_profile_id === state.profile.id)
+  ) || null;
+}
+
+function connectionSummary(connection, profileId) {
+  if (connection.status === "accepted") return "Connected";
+  if (connection.status === "rejected") return "Request declined";
+  if (connection.to_profile_id === state.profile?.id) return "Incoming request";
+  if (connection.from_profile_id === state.profile?.id && connection.to_profile_id === profileId) return "Request sent";
+  return "Pending";
+}
+
+function pendingIncomingConnections() {
+  if (!state.profile) return [];
+  return state.connections.filter(connection => connection.status === "pending" && connection.to_profile_id === state.profile.id);
+}
+
+function pendingOutgoingConnections() {
+  if (!state.profile) return [];
+  return state.connections.filter(connection => connection.status === "pending" && connection.from_profile_id === state.profile.id);
+}
+
+function acceptedConnections() {
+  if (!state.profile) return [];
+  return state.connections.filter(connection => connection.status === "accepted");
+}
+
+function otherProfileForConnection(connection) {
+  if (!state.profile) return null;
+  const otherId = connection.from_profile_id === state.profile.id ? connection.to_profile_id : connection.from_profile_id;
+  return profileFor(otherId);
+}
+
+function directConversationWith(profileId) {
+  if (!state.profile) return null;
+  return state.conversations.find(conversation => {
+    if (conversation.conversation_type !== "direct") return false;
+    const participants = conversation.conversation_participants || [];
+    return participants.some(participant => participant.profile_id === state.profile.id) &&
+      participants.some(participant => participant.profile_id === profileId);
+  }) || null;
 }
 
 function gameFor(id) {

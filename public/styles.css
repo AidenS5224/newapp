@@ -151,6 +151,24 @@ button { cursor: pointer; }
   background: var(--panel-2);
 }
 .button.red { background: #b91c1c; }
+.button:disabled {
+  cursor: default;
+  opacity: .55;
+}
+.connection-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.connection-row:last-child {
+  border-bottom: 0;
+}
+.connection-row p {
+  margin: 3px 0 0;
+}
 .feed-card .media {
   min-height: 220px;
   display: grid;
