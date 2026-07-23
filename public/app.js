@@ -17,6 +17,7 @@ const popularGames = [
   "Counter-Strike 2",
   "Overwatch 2",
   "Rocket League",
+  "The Division 2",
   "Rainbow Six Siege",
   "Destiny 2",
   "Grand Theft Auto V",
@@ -32,6 +33,29 @@ const trackerPlatformOptions = [
   ["xbl", "Xbox"],
   ["psn", "PlayStation"]
 ];
+const accountPlatformOptions = [
+  ["ea", "EA / Origin"],
+  ["steam", "Steam"],
+  ["xbox", "Xbox"],
+  ["psn", "PlayStation"],
+  ["riot", "Riot"],
+  ["bungie", "Bungie"],
+  ["nintendo", "Nintendo"],
+  ["epic", "Epic Games"]
+];
+const statSourceOptions = [
+  ["ea", "EA / Origin"],
+  ["steam", "Steam"],
+  ["xbox", "Xbox"],
+  ["psn", "PlayStation"],
+  ["riot", "Riot"],
+  ["bungie", "Bungie"],
+  ["manual", "Manual / user provided"]
+];
+const trackerGameSupport = {
+  "Apex Legends": { gameId: "apex-legends", platforms: { ea: "origin", xbox: "xbl", psn: "psn" } },
+  "The Division 2": { gameId: "the-division-2", platforms: { ea: "uplay", xbox: "xbl", psn: "psn" } }
+};
 
 const state = {
   tab: "profile",
@@ -438,6 +462,7 @@ function renderSignedInProfile() {
   const availability = availabilityLabel(profile.availability);
   const stats = profile.stats || {};
   const gameRanks = stats.gameRanks || {};
+  const gameStatSources = stats.gameStatSources || {};
   return `
     <section class="profile-page">
       <div class="profile-hero-card">
@@ -464,7 +489,10 @@ function renderSignedInProfile() {
       <div class="profile-grid">
         <div class="card">
           <h3>Top Games</h3>
-          ${games.length ? games.map(value => `<div class="game-rank-row"><span class="pill hot">${escapeHtml(value)}</span><span>${escapeHtml(gameRanks[value] || "Rank not set")}</span></div>`).join("") : `<p>No games set yet.</p>`}
+          ${games.length ? games.map(value => {
+            const source = gameStatSources[value] || {};
+            return `<div class="game-rank-row"><span class="pill hot">${escapeHtml(value)}</span><span>${escapeHtml(gameRanks[value] || "Rank not set")} · ${escapeHtml(sourceLabel(source))}</span></div>`;
+          }).join("") : `<p>No games set yet.</p>`}
         </div>
         <div class="card">
           <h3>Platforms</h3>
@@ -502,6 +530,8 @@ function renderProfileEditor() {
   const protectedInfo = protectedInfoMap();
   const selectedGames = draftGames(profile);
   const gameRanks = profile.stats?.gameRanks || {};
+  const gameStatSources = profile.stats?.gameStatSources || {};
+  const platformAccounts = platformAccountsMap(protectedInfo);
   return `
     <form class="profile-editor" data-save-profile>
       <div class="editor-head">
@@ -543,10 +573,18 @@ function renderProfileEditor() {
             </div>
             <div class="selected-games">
               ${selectedGames.length ? selectedGames.map(game => `
-                <div class="selected-game">
+                <div class="selected-game wide-selected-game">
                   <button class="button dark remove-game" type="button" data-remove-game="${escapeAttribute(game)}">x</button>
                   <strong>${escapeHtml(game)}</strong>
                   <label>Rank<input class="field" name="rank_${escapeAttribute(gameKey(game))}" value="${escapeAttribute(gameRanks[game] || "")}" placeholder="Diamond II, Gold, Casual"></label>
+                  <label>Stats Source
+                    <select class="field" name="source_platform_${escapeAttribute(gameKey(game))}">
+                      ${statSourceOptions.map(([value, label]) => `<option value="${escapeAttribute(value)}" ${gameSourcePlatform(gameStatSources, game) === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+                    </select>
+                  </label>
+                  <label>Source Username / ID<input class="field" name="source_handle_${escapeAttribute(gameKey(game))}" value="${escapeAttribute(gameSourceHandle(gameStatSources, platformAccounts, game))}" placeholder="Use connected handle or enter one for this game"></label>
+                  <button class="button dark sync-game-button" type="button" data-sync-game="${escapeAttribute(game)}">Pull Supported Stats</button>
+                  <span class="muted">${escapeHtml(syncSupportLabel(game))}</span>
                 </div>
               `).join("") : `<p>No games selected yet.</p>`}
             </div>
@@ -562,26 +600,18 @@ function renderProfileEditor() {
             </select>
           </label>
           <div class="tracker-sync-box">
-            <h4>Tracker Network Sync</h4>
-            <p>For now this is wired for Apex Legends. More games can be added as Tracker Network approves/supports them.</p>
+            <h4>Stats Sources</h4>
+            <p>Connect platform accounts once, then choose which account each game should use for stats. Unsupported games stay manual and are clearly labelled as user-provided.</p>
             ${state.trackerMessage ? `<div class="notice small-notice">${escapeHtml(state.trackerMessage)}</div>` : ""}
-            <label>Tracker Handle<input class="field" name="tracker_sync_handle" value="${escapeAttribute(protectedInfo.tracker_network || "")}" placeholder="Your Apex Tracker handle"></label>
-            <label>Tracker Platform
-              <select class="field" name="tracker_sync_platform">
-                ${trackerPlatformOptions.map(([value, label]) => `<option value="${escapeAttribute(value)}">${escapeHtml(label)}</option>`).join("")}
-              </select>
-            </label>
-            <button class="button dark" type="button" data-sync-tracker>Pull Apex Rank</button>
           </div>
           <label>Availability<input class="field" name="availability" value="${escapeAttribute(availabilityLabel(profile.availability))}" placeholder="Evenings, 7PM - 11PM AEST"></label>
           <label>Avatar URL<input class="field" name="avatar_url" value="${escapeAttribute(profile.avatar_url || "")}" placeholder="https://..."></label>
         </section>
         <section class="card profile-card">
-          <h3>Protected Handles</h3>
+          <h3>Connected Platforms</h3>
+          <p class="muted">These are your platform accounts. Later, supported platforms can use OAuth; for now you can enter handles/IDs and choose them per game.</p>
           <label>Discord<input class="field" name="discord" value="${escapeAttribute(protectedInfo.discord || "")}" placeholder="NovaPulse#2042"></label>
-          <label>Tracker Network<input class="field" name="tracker_network" value="${escapeAttribute(protectedInfo.tracker_network || "")}" placeholder="apex/NovaPulse"></label>
-          <label>Steam<input class="field" name="steam" value="${escapeAttribute(protectedInfo.steam || "")}" placeholder="novapulse"></label>
-          <label>Riot / Xbox / PSN<input class="field" name="other" value="${escapeAttribute(protectedInfo.other || "")}" placeholder="Optional"></label>
+          ${accountPlatformOptions.map(([value, label]) => `<label>${escapeHtml(label)}<input class="field" name="platform_${escapeAttribute(value)}" value="${escapeAttribute(platformAccounts[value] || "")}" placeholder="${escapeAttribute(label)} username or account ID"></label>`).join("")}
         </section>
         <section class="card profile-card">
           <h3>Profile Preview</h3>
@@ -624,7 +654,7 @@ function bindPageEvents() {
   document.querySelector("[data-add-game]")?.addEventListener("click", addTypedGame);
   document.querySelectorAll("[data-pick-game]").forEach(button => button.addEventListener("click", () => addGame(button.dataset.pickGame)));
   document.querySelectorAll("[data-remove-game]").forEach(button => button.addEventListener("click", () => removeGame(button.dataset.removeGame)));
-  document.querySelector("[data-sync-tracker]")?.addEventListener("click", syncTrackerRank);
+  document.querySelectorAll("[data-sync-game]").forEach(button => button.addEventListener("click", () => syncGameStats(button.dataset.syncGame)));
   document.querySelector("[data-create-post]")?.addEventListener("submit", createPost);
   document.querySelectorAll("[data-like]").forEach(button => button.addEventListener("click", () => likePost(button.dataset.like)));
   document.querySelectorAll("[data-connect]").forEach(button => button.addEventListener("click", () => connectToPlayer(button.dataset.connect)));
@@ -713,10 +743,22 @@ async function saveProfile(event) {
   const form = new FormData(event.currentTarget);
   const handle = cleanHandle(form.get("handle"));
   const topGames = splitList(form.get("top_games"));
+  const platformAccounts = platformAccountsFromForm(form);
   const gameRanks = {};
+  const gameStatSources = {};
   topGames.forEach(game => {
-    const rank = String(form.get(`rank_${gameKey(game)}`) || "").trim();
+    const key = gameKey(game);
+    const rank = String(form.get(`rank_${key}`) || "").trim();
     if (rank) gameRanks[game] = rank;
+    const sourcePlatform = String(form.get(`source_platform_${key}`) || "manual");
+    const sourceHandle = String(form.get(`source_handle_${key}`) || platformAccounts[sourcePlatform] || "").trim();
+    gameStatSources[game] = {
+      platform: sourcePlatform,
+      handle: sourceHandle,
+      provider: providerForGameSource(game, sourcePlatform),
+      sourceType: providerForGameSource(game, sourcePlatform) ? "approved_third_party" : "user_provided",
+      syncStatus: providerForGameSource(game, sourcePlatform) ? "ready_to_sync" : "manual"
+    };
   });
   const profile = {
     id: state.profile.id,
@@ -728,20 +770,18 @@ async function saveProfile(event) {
     rank: topGames.length ? gameRanks[topGames[0]] || "Unranked" : "Unranked",
     bio: String(form.get("bio") || "").trim(),
     top_games: topGames,
-    platforms: [String(form.get("platform") || "PC")],
     play_style: [String(form.get("play_style") || "Good Comms")],
     availability: { summary: String(form.get("availability") || "").trim() },
     avatar_url: String(form.get("avatar_url") || "").trim() || null,
-    stats: { ...(state.profile.stats || {}), gameRanks }
+    platforms: selectedPublicPlatforms(platformAccounts),
+    stats: { ...(state.profile.stats || {}), gameRanks, gameStatSources }
   };
   const { data, error } = await state.supabase.from("profiles").upsert(profile).select("*").single();
   if (error) return alert(error.message);
 
   const protectedInfo = {
     discord: String(form.get("discord") || "").trim(),
-    tracker_network: String(form.get("tracker_network") || "").trim(),
-    steam: String(form.get("steam") || "").trim(),
-    other: String(form.get("other") || "").trim()
+    platformAccounts
   };
   await state.supabase.from("profile_private").upsert({
     profile_id: state.profile.id,
@@ -749,10 +789,13 @@ async function saveProfile(event) {
     info_stacks: [
       { label: "Gaming", values: profile.top_games },
       { label: "Platforms", values: profile.platforms },
-      { label: "Protected", values: Object.keys(protectedInfo).filter(key => protectedInfo[key]) }
+      { label: "Protected", values: Object.keys(platformAccounts).filter(key => platformAccounts[key]) }
     ]
   });
-  const linked = Object.entries(protectedInfo)
+  const linked = [
+    ["discord", protectedInfo.discord],
+    ...Object.entries(platformAccounts)
+  ]
     .filter(([, accountHandle]) => accountHandle)
     .map(([provider, accountHandle]) => ({
       profile_id: state.profile.id,
@@ -763,7 +806,10 @@ async function saveProfile(event) {
   if (linked.length) {
     await state.supabase.from("linked_accounts").upsert(linked, { onConflict: "profile_id,provider" });
   }
-  const emptyProviders = Object.entries(protectedInfo)
+  const emptyProviders = [
+    ["discord", protectedInfo.discord],
+    ...Object.entries(platformAccounts)
+  ]
     .filter(([, accountHandle]) => !accountHandle)
     .map(([provider]) => provider);
   if (emptyProviders.length) {
@@ -804,20 +850,26 @@ function draftGames(profile) {
   return state.profileDraftGames ?? list(profile.top_games);
 }
 
-async function syncTrackerRank() {
-  const handleInput = document.querySelector("[name='tracker_sync_handle']");
-  const platformInput = document.querySelector("[name='tracker_sync_platform']");
-  const handle = handleInput?.value?.trim();
-  const platform = platformInput?.value || "origin";
+async function syncGameStats(game) {
+  const key = gameKey(game);
+  const sourcePlatform = document.querySelector(`[name='source_platform_${key}']`)?.value || "manual";
+  const handle = document.querySelector(`[name='source_handle_${key}']`)?.value?.trim();
+  const support = trackerGameSupport[game];
+  const providerPlatform = support?.platforms[sourcePlatform];
+  if (!support || !providerPlatform) {
+    state.trackerMessage = `${game} does not have an approved automatic stats source for ${sourceLabel({ platform: sourcePlatform })} yet. You can still save manual rank/source data.`;
+    renderShell();
+    return;
+  }
   if (!handle) {
-    state.trackerMessage = "Add your Tracker handle first.";
+    state.trackerMessage = `Add the ${sourceLabel({ platform: sourcePlatform })} username or account ID for ${game} first.`;
     renderShell();
     return;
   }
 
   state.trackerMessage = "";
   try {
-    const query = new URLSearchParams({ game: "apex-legends", platform, handle });
+    const query = new URLSearchParams({ game: support.gameId, platform: providerPlatform, handle });
     const response = await fetch(`/api/tracker/profile?${query.toString()}`, { cache: "no-store" });
     const result = await response.json();
     if (!response.ok || !result.ok) {
@@ -826,8 +878,8 @@ async function syncTrackerRank() {
       return;
     }
 
-    state.profileDraftGames = [...new Set([...(state.profileDraftGames ?? list(state.profile?.top_games)), "Apex Legends"])];
-    const rankInputName = `rank_${gameKey("Apex Legends")}`;
+    state.profileDraftGames = [...new Set([...(state.profileDraftGames ?? list(state.profile?.top_games)), game])];
+    const rankInputName = `rank_${key}`;
     const existingStats = state.profile?.stats || {};
     state.profile = {
       ...state.profile,
@@ -835,17 +887,28 @@ async function syncTrackerRank() {
         ...existingStats,
         trackerNetwork: {
           ...(existingStats.trackerNetwork || {}),
-          apex: result
+          [support.gameId]: result
         },
         gameRanks: {
           ...(existingStats.gameRanks || {}),
-          "Apex Legends": result.rank || existingStats.gameRanks?.["Apex Legends"] || ""
+          [game]: result.rank || existingStats.gameRanks?.[game] || ""
+        },
+        gameStatSources: {
+          ...(existingStats.gameStatSources || {}),
+          [game]: {
+            platform: sourcePlatform,
+            handle,
+            provider: "tracker-network",
+            sourceType: "approved_third_party",
+            syncStatus: result.rank ? "synced" : "synced_no_rank",
+            lastSyncedAt: new Date().toISOString()
+          }
         }
       }
     };
     state.trackerMessage = result.rank
-      ? `Found Apex rank: ${result.rank}. Hit Save Profile to keep it.`
-      : "Tracker profile found, but no rank field was returned. Hit Save Profile to keep the linked data.";
+      ? `Found ${game} rank: ${result.rank}. Hit Save Profile to keep it.`
+      : `${game} profile found, but no rank field was returned. Hit Save Profile to keep the linked data.`;
     renderShell();
     const rankInput = document.querySelector(`[name='${rankInputName}']`);
     if (rankInput && result.rank) rankInput.value = result.rank;
@@ -1023,6 +1086,61 @@ function providerLabel(value) {
   return String(value || "")
     .replace(/_/g, " ")
     .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function sourceLabel(source = {}) {
+  const platform = source.platform || "manual";
+  if (platform === "manual") return "User-provided";
+  return statSourceOptions.find(([value]) => value === platform)?.[1] || providerLabel(platform);
+}
+
+function syncSupportLabel(game) {
+  const support = trackerGameSupport[game];
+  if (!support) return "No automatic stats provider yet. Manual data is fine.";
+  const labels = Object.keys(support.platforms).map(platform => sourceLabel({ platform }));
+  return `Automatic pull available through Tracker Network for: ${labels.join(", ")}.`;
+}
+
+function providerForGameSource(game, platform) {
+  return trackerGameSupport[game]?.platforms[platform] ? "tracker-network" : "";
+}
+
+function gameSourcePlatform(gameStatSources, game) {
+  return gameStatSources[game]?.platform || "manual";
+}
+
+function gameSourceHandle(gameStatSources, platformAccounts, game) {
+  const source = gameStatSources[game] || {};
+  return source.handle || platformAccounts[source.platform] || "";
+}
+
+function platformAccountsMap(protectedInfo = {}) {
+  return {
+    ...(protectedInfo.platformAccounts || {}),
+    ea: protectedInfo.ea || protectedInfo.origin || "",
+    steam: protectedInfo.steam || "",
+    xbox: protectedInfo.xbox || "",
+    psn: protectedInfo.psn || protectedInfo.playstation || "",
+    riot: protectedInfo.riot || "",
+    bungie: protectedInfo.bungie || "",
+    nintendo: protectedInfo.nintendo || "",
+    epic: protectedInfo.epic || ""
+  };
+}
+
+function platformAccountsFromForm(form) {
+  const accounts = {};
+  accountPlatformOptions.forEach(([value]) => {
+    const accountHandle = String(form.get(`platform_${value}`) || "").trim();
+    if (accountHandle) accounts[value] = accountHandle;
+  });
+  return accounts;
+}
+
+function selectedPublicPlatforms(platformAccounts) {
+  return Object.keys(platformAccounts)
+    .filter(key => platformAccounts[key])
+    .map(key => sourceLabel({ platform: key }));
 }
 
 function normalizeGameName(value) {

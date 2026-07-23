@@ -12,6 +12,19 @@ Gamer Connect now has a provider-based integration layer for game accounts and s
 
 The browser never calls Tracker Network directly and never receives the Tracker API key.
 
+## Account Flow
+
+The intended user flow is platform-first:
+
+1. The user signs in.
+2. The user adds the platform accounts they play on, such as EA/Origin, Steam, Xbox, PlayStation, Riot, Bungie, Nintendo, or Epic.
+3. The user selects games for their public profile.
+4. Each selected game chooses its own stats source platform and username/account ID.
+5. If an approved provider supports that game/source, the app can pull stats from the backend.
+6. If no provider supports it, the game still works with manual, user-provided data.
+
+This means Gamer Connect is not dependent on Tracker Network or Apex Legends. Tracker is one provider behind the abstraction, and games without provider support remain usable.
+
 ## Provider Interface
 
 Providers are plain CommonJS modules shaped around these capabilities:
@@ -77,6 +90,8 @@ Current enabled support:
 - Platforms: `origin`, `xbl`, `psn`.
 - Source type: `approved_third_party`.
 - Verification status: `public_account_unverified`.
+
+The UI also supports selecting non-Tracker platforms as stats sources so game accounts can be modeled before a provider exists. Those entries are labelled as user-provided until an approved provider can fetch data.
 
 Tracker Network requests require the `TRN-Api-Key` header. Store the key only as `TRACKER_NETWORK_API_KEY` or `TRN_API_KEY` in Vercel/server environment variables.
 

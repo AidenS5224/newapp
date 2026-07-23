@@ -314,6 +314,13 @@ button { cursor: pointer; }
   padding: 10px;
   background: #08111f;
 }
+.wide-selected-game {
+  grid-template-columns: auto minmax(130px, .8fr) minmax(170px, 1fr) minmax(170px, 1fr);
+}
+.wide-selected-game .sync-game-button,
+.wide-selected-game .muted {
+  grid-column: 2 / -1;
+}
 .selected-game label {
   margin: 0;
 }
