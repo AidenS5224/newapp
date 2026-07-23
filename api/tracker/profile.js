@@ -1,10 +1,4 @@
-const supportedGames = {
-  "apex-legends": {
-    title: "apex",
-    displayName: "Apex Legends",
-    platforms: ["origin", "xbl", "psn"]
-  }
-};
+const { providerById } = require("../lib/game-data/provider-registry");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
@@ -13,99 +7,68 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const apiKey = (process.env.TRACKER_NETWORK_API_KEY || process.env.TRN_API_KEY || "").trim();
-  if (!apiKey) {
-    res.status(501).json({
+  const provider = providerById("tracker-network");
+  const result = await provider.fetchProfile({
+    gameId: String(req.query.game || "apex-legends").trim(),
+    platform: String(req.query.platform || "").trim(),
+    handle: String(req.query.handle || "").trim()
+  });
+
+  if (!result.ok) {
+    const status = statusForError(result.error?.code);
+    res.status(status).json({
       ok: false,
-      error: "Tracker Network API key is not configured. Add TRACKER_NETWORK_API_KEY in Vercel."
+      code: result.error?.code || "sync_failed",
+      error: result.error?.message || "Tracker Network sync failed.",
+      details: publicDetails(result.error?.details)
     });
     return;
   }
 
-  const game = String(req.query.game || "apex-legends").trim();
-  const platform = String(req.query.platform || "").trim().toLowerCase();
-  const handle = String(req.query.handle || "").trim();
-  const gameConfig = supportedGames[game];
-
-  if (!gameConfig) {
-    res.status(400).json({ ok: false, error: "This game is not wired to Tracker Network yet." });
-    return;
-  }
-  if (!gameConfig.platforms.includes(platform)) {
-    res.status(400).json({
-      ok: false,
-      error: `Unsupported platform for ${gameConfig.displayName}. Use: ${gameConfig.platforms.join(", ")}.`
-    });
-    return;
-  }
-  if (!handle) {
-    res.status(400).json({ ok: false, error: "Tracker handle is required." });
-    return;
-  }
-
-  const trackerUrl = `https://public-api.tracker.gg/v2/${gameConfig.title}/standard/profile/${encodeURIComponent(platform)}/${encodeURIComponent(handle)}`;
-
-  try {
-    const response = await fetch(trackerUrl, {
-      headers: {
-        "TRN-Api-Key": apiKey,
-        "Accept": "application/json"
-      }
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      res.status(response.status).json({
-        ok: false,
-        error: payload?.errors?.[0]?.message || payload?.message || "Tracker Network request failed.",
-        status: response.status
-      });
-      return;
-    }
-
-    const normalized = normalizeTrackerProfile(gameConfig.displayName, platform, handle, payload);
-    res.status(200).json({ ok: true, ...normalized });
-  } catch (_error) {
-    res.status(502).json({ ok: false, error: "Could not reach Tracker Network." });
-  }
+  res.status(200).json({
+    ok: true,
+    provider: "tracker-network",
+    game: result.normalizedProfile.gameId,
+    platform: result.normalizedProfile.platform,
+    handle: result.normalizedProfile.username,
+    rank: result.normalizedRank.displayText,
+    stats: legacyStats(result.normalizedStats),
+    normalizedProfile: result.normalizedProfile,
+    normalizedRank: result.normalizedRank,
+    normalizedStats: result.normalizedStats,
+    sourceType: result.normalizedProfile.sourceType,
+    verificationStatus: result.normalizedProfile.verificationStatus,
+    cache: result.cache,
+    rateLimit: result.rateLimit || {}
+  });
 };
 
-function normalizeTrackerProfile(game, platform, handle, payload) {
-  const profile = payload?.data || {};
-  const overview = Array.isArray(profile.segments)
-    ? profile.segments.find(segment => segment.type === "overview") || profile.segments[0]
-    : null;
-  const stats = overview?.stats || {};
-  const rank = firstText([
-    stats.rankScore?.metadata?.rankName,
-    stats.rankScore?.displayValue,
-    stats.rankedScore?.metadata?.rankName,
-    stats.rankedScore?.displayValue,
-    stats.rank?.displayValue,
-    stats.arenaRankScore?.metadata?.rankName,
-    stats.arenaRankScore?.displayValue
-  ]);
+function statusForError(code) {
+  if (code === "provider_disabled") return 403;
+  if (code === "provider_not_configured") return 501;
+  if (code === "provider_not_supported_for_game" || code === "provider_not_supported_for_platform") return 400;
+  if (code === "invalid_identifier") return 400;
+  if (code === "account_not_found") return 404;
+  if (code === "provider_rate_limited") return 429;
+  if (code === "provider_unavailable") return 502;
+  if (code === "provider_approval_required") return 403;
+  return 500;
+}
 
+function publicDetails(details = {}) {
+  const safe = { ...details };
+  delete safe.apiKey;
+  delete safe.token;
+  return safe;
+}
+
+function legacyStats(stats) {
   return {
-    game,
-    platform,
-    handle,
-    rank: rank || "",
-    stats: {
-      level: statValue(stats.level),
-      kills: statValue(stats.kills),
-      damage: statValue(stats.damage),
-      matchesPlayed: statValue(stats.matchesPlayed),
-      winRate: statValue(stats.winRate),
-      kd: statValue(stats.kd)
-    },
-    rawUpdatedAt: profile.metadata?.lastUpdated?.value || profile.expiryDate || null
+    level: stats.providerSpecificSummary?.level || "",
+    kills: stats.kills || "",
+    damage: stats.providerSpecificSummary?.damage || "",
+    matchesPlayed: stats.providerSpecificSummary?.matchesPlayed || stats.matches || "",
+    winRate: stats.winRate || "",
+    kd: stats.kdRatio || ""
   };
-}
-
-function statValue(stat) {
-  return stat?.displayValue ?? stat?.value ?? "";
-}
-
-function firstText(values) {
-  return values.find(value => typeof value === "string" && value.trim()) || "";
 }

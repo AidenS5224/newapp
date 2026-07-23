@@ -12,6 +12,7 @@ Create a Supabase project, then run the migration in:
 ```text
 supabase/migrations/0001_gamer_connect.sql
 supabase/migrations/0002_conversation_policy_helpers.sql
+supabase/migrations/0003_game_account_integrations.sql
 ```
 
 Supabase should own production auth, public profiles, protected linked accounts, feed posts, comments, reactions, conversations, and messages.
@@ -36,6 +37,7 @@ NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
 TRACKER_NETWORK_API_KEY
+PROVIDER_TOKEN_ENCRYPTION_KEY
 ```
 
 Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. Never expose it in Android, iOS, or browser code.
@@ -52,6 +54,8 @@ api/tracker/profile.js
 ```
 
 This endpoint currently supports Apex Legends rank/profile lookup through Tracker Network using the official `TRN-Api-Key` header. Tracker Network's current developer FAQ says supported public API titles are Apex Legends and The Division 2, with older Splitgate and CS:GO APIs deprecated, so add new games here only when Tracker Network documents and approves them.
+
+See `docs/GAME_DATA_PROVIDERS.md` for the provider registry, feature flags, normalized response models, and current limitations.
 
 ## Recommended Split
 

@@ -168,14 +168,17 @@ Hosted project files are included:
 ```text
 supabase/migrations/0001_gamer_connect.sql
 supabase/migrations/0002_conversation_policy_helpers.sql
+supabase/migrations/0003_game_account_integrations.sql
 vercel.json
 api/config.js
+api/providers.js
 api/tracker/profile.js
 public/index.html
 public/app.js
 public/styles.css
 .env.example
 docs/SUPABASE_VERCEL.md
+docs/GAME_DATA_PROVIDERS.md
 ```
 
 Use the local Python backend for Raspberry Pi testing. Use Supabase + Vercel for the hosted web/PC client with auth, feed, discovery, messages, events/servers, and profile.
