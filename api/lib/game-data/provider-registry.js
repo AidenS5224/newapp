@@ -1,9 +1,11 @@
 const { providerFlags } = require("./feature-flags");
+const r6DataProvider = require("./providers/r6data");
 const trackerNetworkProvider = require("./providers/tracker-network");
 
 function providers() {
   const flags = providerFlags();
   return [
+    r6DataProvider(flags.r6data),
     trackerNetworkProvider(flags.tracker)
   ];
 }

@@ -13,6 +13,12 @@ function providerFlags() {
         "the-division-2": flag("PROVIDER_TRACKER_DIVISION2_ENABLED", false)
       }
     },
+    r6data: {
+      enabled: flag("PROVIDER_R6DATA_ENABLED", true),
+      games: {
+        "rainbow-six-siege": flag("PROVIDER_R6DATA_R6S_ENABLED", true)
+      }
+    },
     steam: { enabled: flag("PROVIDER_STEAM_ENABLED", false) },
     riot: {
       enabled: flag("PROVIDER_RIOT_ENABLED", false),

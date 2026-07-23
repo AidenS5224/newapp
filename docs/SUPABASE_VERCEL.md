@@ -13,6 +13,7 @@ Create a Supabase project, then run the migration in:
 supabase/migrations/0001_gamer_connect.sql
 supabase/migrations/0002_conversation_policy_helpers.sql
 supabase/migrations/0003_game_account_integrations.sql
+supabase/migrations/0004_r6data_provider.sql
 ```
 
 Supabase should own production auth, public profiles, protected linked accounts, feed posts, comments, reactions, conversations, and messages.
@@ -37,11 +38,12 @@ NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
 TRACKER_NETWORK_API_KEY
+R6DATA_API_KEY
 PROVIDER_TOKEN_ENCRYPTION_KEY
 ```
 
 Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. Never expose it in Android, iOS, or browser code.
-Keep `TRACKER_NETWORK_API_KEY` server-only as well. Browser and mobile clients should call the app's own `/api/tracker/profile` endpoint instead of calling Tracker Network directly.
+Keep `TRACKER_NETWORK_API_KEY` and `R6DATA_API_KEY` server-only as well. Browser and mobile clients should call the app's own `/api/game-data/profile` endpoint instead of calling providers directly.
 
 The current Vercel web client reads only the public URL and publishable key through `/api/config`. It does not send the service role key to the browser.
 
@@ -50,10 +52,11 @@ The current Vercel web client reads only the public URL and publishable key thro
 The Vercel backend includes:
 
 ```text
+api/game-data/profile.js
 api/tracker/profile.js
 ```
 
-This endpoint currently supports Apex Legends rank/profile lookup through Tracker Network using the official `TRN-Api-Key` header. Tracker Network's current developer FAQ says supported public API titles are Apex Legends and The Division 2, with older Splitgate and CS:GO APIs deprecated, so add new games here only when Tracker Network documents and approves them.
+The generic endpoint currently supports Apex Legends through Tracker Network and Rainbow Six Siege through R6Data. The legacy Tracker endpoint remains for backwards compatibility. Tracker Network's current developer FAQ says supported public API titles are Apex Legends and The Division 2, with older Splitgate and CS:GO APIs deprecated, so add new Tracker games only when Tracker Network documents and approves them.
 
 See `docs/GAME_DATA_PROVIDERS.md` for the provider registry, feature flags, normalized response models, and current limitations.
 

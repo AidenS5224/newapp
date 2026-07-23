@@ -6,6 +6,7 @@ Gamer Connect now has a provider-based integration layer for game accounts and s
 
 - `api/lib/game-data/`: provider registry, feature flags, cache helpers, error mapping, and normalized data models.
 - `api/lib/game-data/providers/tracker-network.js`: Tracker Network provider implementation.
+- `api/lib/game-data/providers/r6data.js`: R6Data provider implementation for Rainbow Six Siege.
 - `api/tracker/profile.js`: backwards-compatible Vercel endpoint used by the current Profile editor.
 - `api/providers.js`: provider capability and health summary endpoint. Use `?game=apex-legends` to filter by game.
 - `supabase/migrations/0003_game_account_integrations.sql`: additive schema for providers, supported games, user game accounts, authorization records, snapshots, manual profiles, sync jobs, and provider request events.
@@ -71,6 +72,8 @@ Use environment variables to disable providers or specific titles without a depl
 ```text
 PROVIDER_TRACKER_ENABLED=true
 PROVIDER_TRACKER_APEX_ENABLED=true
+PROVIDER_R6DATA_ENABLED=true
+PROVIDER_R6DATA_R6S_ENABLED=true
 PROVIDER_STEAM_ENABLED=false
 PROVIDER_RIOT_ENABLED=false
 PROVIDER_RIOT_VALORANT_ENABLED=false
@@ -96,6 +99,19 @@ The UI also supports selecting non-Tracker platforms as stats sources so game ac
 Rocket League is currently enabled in the profile editor as manual tracking: users can save rank, playlist, MMR/rating, source platform, and source username. Do not call undocumented Tracker Network Rocket League endpoints; add automatic Rocket League sync only after an approved public provider is available.
 
 Tracker Network requests require the `TRN-Api-Key` header. Store the key only as `TRACKER_NETWORK_API_KEY` or `TRN_API_KEY` in Vercel/server environment variables.
+
+## R6Data
+
+R6Data supports Rainbow Six Siege profile, ranked, and aggregate stat lookup through the backend-only provider.
+
+Current enabled support:
+
+- Rainbow Six Siege via public username lookup.
+- Platforms: `uplay`, `xbl`, `psn`.
+- Source type: `approved_third_party`.
+- Verification status: `public_account_unverified`.
+
+R6Data requests require the `api-key` header. Store the key only as `R6DATA_API_KEY` in Vercel/server environment variables.
 
 ## Steam, Riot, And Bungie
 

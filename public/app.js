@@ -35,6 +35,7 @@ const trackerPlatformOptions = [
 ];
 const accountPlatformOptions = [
   ["ea", "EA / Origin"],
+  ["ubisoft", "Ubisoft Connect"],
   ["steam", "Steam"],
   ["xbox", "Xbox"],
   ["psn", "PlayStation"],
@@ -45,6 +46,7 @@ const accountPlatformOptions = [
 ];
 const statSourceOptions = [
   ["ea", "EA / Origin"],
+  ["ubisoft", "Ubisoft Connect"],
   ["steam", "Steam"],
   ["xbox", "Xbox"],
   ["psn", "PlayStation"],
@@ -52,9 +54,10 @@ const statSourceOptions = [
   ["bungie", "Bungie"],
   ["manual", "Manual / user provided"]
 ];
-const trackerGameSupport = {
-  "Apex Legends": { gameId: "apex-legends", platforms: { ea: "origin", xbox: "xbl", psn: "psn" } },
-  "The Division 2": { gameId: "the-division-2", platforms: { ea: "uplay", xbox: "xbl", psn: "psn" } }
+const gameProviderSupport = {
+  "Apex Legends": { provider: "tracker-network", providerLabel: "Tracker Network", gameId: "apex-legends", platforms: { ea: "origin", xbox: "xbl", psn: "psn" } },
+  "The Division 2": { provider: "tracker-network", providerLabel: "Tracker Network", gameId: "the-division-2", platforms: { ubisoft: "uplay", xbox: "xbl", psn: "psn" } },
+  "Rainbow Six Siege": { provider: "r6data", providerLabel: "R6Data", gameId: "rainbow-six-siege", platforms: { ubisoft: "uplay", xbox: "xbl", psn: "psn" } }
 };
 
 const state = {
@@ -876,7 +879,7 @@ async function syncGameStats(game) {
   const key = gameKey(game);
   const sourcePlatform = document.querySelector(`[name='source_platform_${key}']`)?.value || "manual";
   const handle = document.querySelector(`[name='source_handle_${key}']`)?.value?.trim();
-  const support = trackerGameSupport[game];
+  const support = gameProviderSupport[game];
   const providerPlatform = support?.platforms[sourcePlatform];
   if (!support || !providerPlatform) {
     state.trackerMessage = `${game} does not have an approved automatic stats source for ${sourceLabel({ platform: sourcePlatform })} yet. You can still save manual rank/source data.`;
@@ -891,11 +894,11 @@ async function syncGameStats(game) {
 
   state.trackerMessage = "";
   try {
-    const query = new URLSearchParams({ game: support.gameId, platform: providerPlatform, handle });
-    const response = await fetch(`/api/tracker/profile?${query.toString()}`, { cache: "no-store" });
+    const query = new URLSearchParams({ provider: support.provider, game: support.gameId, platform: providerPlatform, handle });
+    const response = await fetch(`/api/game-data/profile?${query.toString()}`, { cache: "no-store" });
     const result = await response.json();
     if (!response.ok || !result.ok) {
-      state.trackerMessage = result.error || "Tracker Network sync failed.";
+      state.trackerMessage = result.error || "Stats sync failed.";
       renderShell();
       return;
     }
@@ -920,7 +923,7 @@ async function syncGameStats(game) {
           [game]: {
             platform: sourcePlatform,
             handle,
-            provider: "tracker-network",
+            provider: support.provider,
             sourceType: "approved_third_party",
             syncStatus: result.rank ? "synced" : "synced_no_rank",
             lastSyncedAt: new Date().toISOString()
@@ -944,7 +947,7 @@ async function syncGameStats(game) {
     const rankInput = document.querySelector(`[name='${rankInputName}']`);
     if (rankInput && result.rank) rankInput.value = result.rank;
   } catch (_error) {
-    state.trackerMessage = "Could not reach the Gamer Connect Tracker endpoint.";
+    state.trackerMessage = "Could not reach the Gamer Connect stats endpoint.";
     renderShell();
   }
 }
@@ -1126,18 +1129,19 @@ function sourceLabel(source = {}) {
 }
 
 function syncSupportLabel(game) {
-  const support = trackerGameSupport[game];
+  const support = gameProviderSupport[game];
   if (!support) return "No automatic stats provider yet. Manual data is fine.";
   const labels = Object.keys(support.platforms).map(platform => sourceLabel({ platform }));
-  return `Automatic pull available through Tracker Network for: ${labels.join(", ")}.`;
+  return `Automatic pull available through ${support.providerLabel} for: ${labels.join(", ")}.`;
 }
 
 function providerForGameSource(game, platform) {
-  return trackerGameSupport[game]?.platforms[platform] ? "tracker-network" : "";
+  const support = gameProviderSupport[game];
+  return support?.platforms[platform] ? support.provider : "";
 }
 
 function providerForAnyGameSource(game) {
-  return Boolean(trackerGameSupport[game]);
+  return Boolean(gameProviderSupport[game]);
 }
 
 function gameSourcePlatform(gameStatSources, game) {
@@ -1153,6 +1157,7 @@ function platformAccountsMap(protectedInfo = {}) {
   return {
     ...(protectedInfo.platformAccounts || {}),
     ea: protectedInfo.ea || protectedInfo.origin || "",
+    ubisoft: protectedInfo.ubisoft || protectedInfo.uplay || "",
     steam: protectedInfo.steam || "",
     xbox: protectedInfo.xbox || "",
     psn: protectedInfo.psn || protectedInfo.playstation || "",
