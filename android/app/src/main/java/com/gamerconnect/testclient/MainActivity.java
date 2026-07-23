@@ -125,10 +125,10 @@ public class MainActivity extends Activity {
         nav.setGravity(Gravity.CENTER);
         nav.setPadding(dp(10), dp(8), dp(10), dp(8));
         nav.setBackgroundColor(Color.rgb(3, 7, 15));
-        nav.addView(navItem("Home", false), weighted());
+        nav.addView(navItem("Servers", false), weighted());
+        nav.addView(navItem("Events", false), weighted());
         nav.addView(navItem("Discover", true), weighted());
-        nav.addView(navItem("LFG", false), weighted());
-        nav.addView(navItem("Squads", false), weighted());
+        nav.addView(navItem("Messages", false), weighted());
         nav.addView(navItem("Profile", false), weighted());
         return nav;
     }
