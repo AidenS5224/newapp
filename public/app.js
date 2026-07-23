@@ -45,13 +45,16 @@ const accountPlatformOptions = [
   ["epic", "Epic Games"]
 ];
 const statSourceOptions = [
-  ["ea", "EA / Origin"],
   ["ubisoft", "Ubisoft Connect"],
+  ["ea", "EA / Origin"],
   ["steam", "Steam"],
+  ["epic", "Epic Games"],
   ["xbox", "Xbox"],
   ["psn", "PlayStation"],
+  ["nintendo", "Nintendo"],
   ["riot", "Riot"],
   ["bungie", "Bungie"],
+  ["mobile", "Mobile"],
   ["manual", "Manual / user provided"]
 ];
 const gameProviderSupport = {
@@ -598,7 +601,7 @@ function renderProfileEditor() {
                     <label>Source Username / ID<input class="field" name="source_handle_${escapeAttribute(gameKey(game))}" value="${escapeAttribute(gameSourceHandle(gameStatSources, platformAccounts, game))}" placeholder="Use connected handle or enter one for this game"></label>
                   </div>
                   ${providerForAnyGameSource(game)
-                    ? `<button class="button dark sync-game-button" type="button" data-sync-game="${escapeAttribute(game)}">Pull Supported Stats</button>`
+                    ? `<button class="button dark sync-game-button" type="button" data-sync-game="${escapeAttribute(game)}">Pull Stats Now</button>`
                     : `<span class="manual-badge">Manual tracking for now</span>`}
                 </div>
               `).join("") : `<p>No games selected yet.</p>`}
@@ -768,7 +771,7 @@ async function saveProfile(event) {
     if (rank) gameRanks[game] = rank;
     const playlist = String(form.get(`playlist_${key}`) || "").trim();
     const mmr = String(form.get(`mmr_${key}`) || "").trim();
-    const sourcePlatform = String(form.get(`source_platform_${key}`) || "manual");
+    const sourcePlatform = normalizeStatsSource(form.get(`source_platform_${key}`) || "manual");
     const sourceHandle = String(form.get(`source_handle_${key}`) || platformAccounts[sourcePlatform] || "").trim();
     const provider = providerForGameSource(game, sourcePlatform);
     gameStatSources[game] = {
@@ -877,7 +880,7 @@ function draftGames(profile) {
 
 async function syncGameStats(game) {
   const key = gameKey(game);
-  const sourcePlatform = document.querySelector(`[name='source_platform_${key}']`)?.value || "manual";
+  const sourcePlatform = normalizeStatsSource(document.querySelector(`[name='source_platform_${key}']`)?.value || "manual");
   const handle = document.querySelector(`[name='source_handle_${key}']`)?.value?.trim();
   const support = gameProviderSupport[game];
   const providerPlatform = support?.platforms[sourcePlatform];
@@ -1145,7 +1148,7 @@ function providerForAnyGameSource(game) {
 }
 
 function gameSourcePlatform(gameStatSources, game) {
-  return gameStatSources[game]?.platform || "manual";
+  return normalizeStatsSource(gameStatSources[game]?.platform || "manual");
 }
 
 function gameSourceHandle(gameStatSources, platformAccounts, game) {
@@ -1166,6 +1169,15 @@ function platformAccountsMap(protectedInfo = {}) {
     nintendo: protectedInfo.nintendo || "",
     epic: protectedInfo.epic || ""
   };
+}
+
+function normalizeStatsSource(value) {
+  const source = String(value || "").trim().toLowerCase();
+  if (["ubi", "uplay", "ubisoft-connect", "ubisoft connect"].includes(source)) return "ubisoft";
+  if (["origin", "ea app", "ea-app"].includes(source)) return "ea";
+  if (["playstation", "ps", "psn"].includes(source)) return "psn";
+  if (["xbl", "xbox-live", "xbox live"].includes(source)) return "xbox";
+  return source || "manual";
 }
 
 function platformAccountsFromForm(form) {
