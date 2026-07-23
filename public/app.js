@@ -1123,11 +1123,13 @@ async function ensureDirectConversation(profileId) {
   const existing = directConversationWith(profileId);
   if (existing) return existing;
   const target = profileFor(profileId);
-  const { data: conversation, error } = await state.supabase.from("conversations").insert({
+  const conversation = {
+    id: crypto.randomUUID(),
     title: target ? `${state.profile.handle} + ${target.handle}` : "Direct Chat",
     conversation_type: "direct",
     created_by_profile_id: state.profile.id
-  }).select("*").single();
+  };
+  const { error } = await state.supabase.from("conversations").insert(conversation);
   if (error) return alert(error.message);
   const { error: participantError } = await state.supabase.from("conversation_participants").insert([
     { conversation_id: conversation.id, profile_id: state.profile.id, role: "owner" },
@@ -1185,7 +1187,14 @@ function pendingOutgoingConnections() {
 
 function acceptedConnections() {
   if (!state.profile) return [];
-  return state.connections.filter(connection => connection.status === "accepted");
+  const seen = new Set();
+  return state.connections.filter(connection => {
+    if (connection.status !== "accepted") return false;
+    const otherId = connection.from_profile_id === state.profile.id ? connection.to_profile_id : connection.from_profile_id;
+    if (seen.has(otherId)) return false;
+    seen.add(otherId);
+    return true;
+  });
 }
 
 function otherProfileForConnection(connection) {
