@@ -43,7 +43,7 @@ PROVIDER_TOKEN_ENCRYPTION_KEY
 ```
 
 Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. Never expose it in Android, iOS, or browser code.
-Keep `TRACKER_NETWORK_API_KEY` and `R6DATA_API_KEY` server-only as well. Browser and mobile clients should call the app's own `/api/game-data/profile` endpoint instead of calling providers directly.
+Keep `TRACKER_NETWORK_API_KEY` and `R6DATA_API_KEY` server-only as well. Browser and mobile clients should call the app's own `/api/tracker/profile` endpoint instead of calling providers directly.
 
 The current Vercel web client reads only the public URL and publishable key through `/api/config`. It does not send the service role key to the browser.
 
@@ -52,11 +52,10 @@ The current Vercel web client reads only the public URL and publishable key thro
 The Vercel backend includes:
 
 ```text
-api/game-data/profile.js
 api/tracker/profile.js
 ```
 
-The generic endpoint currently supports Apex Legends through Tracker Network and Rainbow Six Siege through R6Data. The legacy Tracker endpoint remains for backwards compatibility. Tracker Network's current developer FAQ says supported public API titles are Apex Legends and The Division 2, with older Splitgate and CS:GO APIs deprecated, so add new Tracker games only when Tracker Network documents and approves them.
+The provider endpoint currently supports Apex Legends through Tracker Network and Rainbow Six Siege through R6Data. It keeps the `/api/tracker/profile` path for backwards compatibility and to stay within the Vercel Hobby serverless function limit. Tracker Network's current developer FAQ says supported public API titles are Apex Legends and The Division 2, with older Splitgate and CS:GO APIs deprecated, so add new Tracker games only when Tracker Network documents and approves them.
 
 See `docs/GAME_DATA_PROVIDERS.md` for the provider registry, feature flags, normalized response models, and current limitations.
 

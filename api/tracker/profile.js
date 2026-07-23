@@ -1,4 +1,4 @@
-const { providerById } = require("../lib/game-data/provider-registry");
+const { providerById, providersForGame } = require("../lib/game-data/provider-registry");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
@@ -7,9 +7,23 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const provider = providerById("tracker-network");
+  const gameId = String(req.query.game || "apex-legends").trim();
+  const requestedProvider = String(req.query.provider || "").trim();
+  const provider = requestedProvider
+    ? providerById(requestedProvider)
+    : providersForGame(gameId)[0] || providerById("tracker-network");
+
+  if (!provider) {
+    res.status(400).json({
+      ok: false,
+      code: "provider_not_supported_for_game",
+      error: "No approved provider supports this game yet."
+    });
+    return;
+  }
+
   const result = await provider.fetchProfile({
-    gameId: String(req.query.game || "apex-legends").trim(),
+    gameId,
     platform: String(req.query.platform || "").trim(),
     handle: String(req.query.handle || "").trim()
   });
@@ -19,7 +33,7 @@ module.exports = async function handler(req, res) {
     res.status(status).json({
       ok: false,
       code: result.error?.code || "sync_failed",
-      error: result.error?.message || "Tracker Network sync failed.",
+      error: result.error?.message || "Game data sync failed.",
       details: publicDetails(result.error?.details)
     });
     return;
@@ -27,7 +41,7 @@ module.exports = async function handler(req, res) {
 
   res.status(200).json({
     ok: true,
-    provider: "tracker-network",
+    provider: result.normalizedProfile.provider,
     game: result.normalizedProfile.gameId,
     platform: result.normalizedProfile.platform,
     handle: result.normalizedProfile.username,
@@ -64,7 +78,7 @@ function publicDetails(details = {}) {
 
 function legacyStats(stats) {
   return {
-    level: stats.providerSpecificSummary?.level || "",
+    level: stats.providerSpecificSummary?.level || stats.providerSpecificSummary?.clearanceLevel || "",
     kills: stats.kills || "",
     damage: stats.providerSpecificSummary?.damage || "",
     matchesPlayed: stats.providerSpecificSummary?.matchesPlayed || stats.matches || "",

@@ -898,7 +898,7 @@ async function syncGameStats(game) {
   state.trackerMessage = "";
   try {
     const query = new URLSearchParams({ provider: support.provider, game: support.gameId, platform: providerPlatform, handle });
-    const response = await fetch(`/api/game-data/profile?${query.toString()}`, { cache: "no-store" });
+    const response = await fetch(`/api/tracker/profile?${query.toString()}`, { cache: "no-store" });
     const result = await response.json();
     if (!response.ok || !result.ok) {
       state.trackerMessage = result.error || "Stats sync failed.";
