@@ -322,6 +322,21 @@ button { cursor: pointer; }
   min-height: 36px;
   padding: 0;
 }
+.tracker-sync-box {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(52, 211, 115, .25);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(52, 211, 115, .06);
+}
+.tracker-sync-box h4 {
+  margin: 0;
+}
+.tracker-sync-box p {
+  margin: 0;
+  color: var(--muted);
+}
 .stat-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

@@ -27,6 +27,11 @@ const popularGames = [
 
 const platformOptions = ["PC", "PlayStation", "Xbox", "Nintendo Switch", "Mobile"];
 const playStyleOptions = ["Competitive", "Casual", "Good Comms", "Team Player", "Aggressive", "Strategic", "Coach / Mentor"];
+const trackerPlatformOptions = [
+  ["origin", "PC / EA Origin"],
+  ["xbl", "Xbox"],
+  ["psn", "PlayStation"]
+];
 
 const state = {
   tab: "profile",
@@ -34,6 +39,7 @@ const state = {
   authMessage: "",
   profileEdit: false,
   profileMessage: "",
+  trackerMessage: "",
   profileDraftGames: null,
   ready: false,
   config: null,
@@ -555,6 +561,18 @@ function renderProfileEditor() {
               ${playStyleOptions.map(option => `<option value="${escapeAttribute(option)}" ${list(profile.play_style)[0] === option ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
             </select>
           </label>
+          <div class="tracker-sync-box">
+            <h4>Tracker Network Sync</h4>
+            <p>For now this is wired for Apex Legends. More games can be added as Tracker Network approves/supports them.</p>
+            ${state.trackerMessage ? `<div class="notice small-notice">${escapeHtml(state.trackerMessage)}</div>` : ""}
+            <label>Tracker Handle<input class="field" name="tracker_sync_handle" value="${escapeAttribute(protectedInfo.tracker_network || "")}" placeholder="Your Apex Tracker handle"></label>
+            <label>Tracker Platform
+              <select class="field" name="tracker_sync_platform">
+                ${trackerPlatformOptions.map(([value, label]) => `<option value="${escapeAttribute(value)}">${escapeHtml(label)}</option>`).join("")}
+              </select>
+            </label>
+            <button class="button dark" type="button" data-sync-tracker>Pull Apex Rank</button>
+          </div>
           <label>Availability<input class="field" name="availability" value="${escapeAttribute(availabilityLabel(profile.availability))}" placeholder="Evenings, 7PM - 11PM AEST"></label>
           <label>Avatar URL<input class="field" name="avatar_url" value="${escapeAttribute(profile.avatar_url || "")}" placeholder="https://..."></label>
         </section>
@@ -606,6 +624,7 @@ function bindPageEvents() {
   document.querySelector("[data-add-game]")?.addEventListener("click", addTypedGame);
   document.querySelectorAll("[data-pick-game]").forEach(button => button.addEventListener("click", () => addGame(button.dataset.pickGame)));
   document.querySelectorAll("[data-remove-game]").forEach(button => button.addEventListener("click", () => removeGame(button.dataset.removeGame)));
+  document.querySelector("[data-sync-tracker]")?.addEventListener("click", syncTrackerRank);
   document.querySelector("[data-create-post]")?.addEventListener("submit", createPost);
   document.querySelectorAll("[data-like]").forEach(button => button.addEventListener("click", () => likePost(button.dataset.like)));
   document.querySelectorAll("[data-connect]").forEach(button => button.addEventListener("click", () => connectToPlayer(button.dataset.connect)));
@@ -783,6 +802,57 @@ function removeGame(value) {
 
 function draftGames(profile) {
   return state.profileDraftGames ?? list(profile.top_games);
+}
+
+async function syncTrackerRank() {
+  const handleInput = document.querySelector("[name='tracker_sync_handle']");
+  const platformInput = document.querySelector("[name='tracker_sync_platform']");
+  const handle = handleInput?.value?.trim();
+  const platform = platformInput?.value || "origin";
+  if (!handle) {
+    state.trackerMessage = "Add your Tracker handle first.";
+    renderShell();
+    return;
+  }
+
+  state.trackerMessage = "";
+  try {
+    const query = new URLSearchParams({ game: "apex-legends", platform, handle });
+    const response = await fetch(`/api/tracker/profile?${query.toString()}`, { cache: "no-store" });
+    const result = await response.json();
+    if (!response.ok || !result.ok) {
+      state.trackerMessage = result.error || "Tracker Network sync failed.";
+      renderShell();
+      return;
+    }
+
+    state.profileDraftGames = [...new Set([...(state.profileDraftGames ?? list(state.profile?.top_games)), "Apex Legends"])];
+    const rankInputName = `rank_${gameKey("Apex Legends")}`;
+    const existingStats = state.profile?.stats || {};
+    state.profile = {
+      ...state.profile,
+      stats: {
+        ...existingStats,
+        trackerNetwork: {
+          ...(existingStats.trackerNetwork || {}),
+          apex: result
+        },
+        gameRanks: {
+          ...(existingStats.gameRanks || {}),
+          "Apex Legends": result.rank || existingStats.gameRanks?.["Apex Legends"] || ""
+        }
+      }
+    };
+    state.trackerMessage = result.rank
+      ? `Found Apex rank: ${result.rank}. Hit Save Profile to keep it.`
+      : "Tracker profile found, but no rank field was returned. Hit Save Profile to keep the linked data.";
+    renderShell();
+    const rankInput = document.querySelector(`[name='${rankInputName}']`);
+    if (rankInput && result.rank) rankInput.value = result.rank;
+  } catch (_error) {
+    state.trackerMessage = "Could not reach the Gamer Connect Tracker endpoint.";
+    renderShell();
+  }
 }
 
 async function createPost(event) {

@@ -170,6 +170,7 @@ supabase/migrations/0001_gamer_connect.sql
 supabase/migrations/0002_conversation_policy_helpers.sql
 vercel.json
 api/config.js
+api/tracker/profile.js
 public/index.html
 public/app.js
 public/styles.css

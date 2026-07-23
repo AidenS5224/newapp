@@ -35,11 +35,23 @@ Set these Vercel environment variables:
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
+TRACKER_NETWORK_API_KEY
 ```
 
 Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. Never expose it in Android, iOS, or browser code.
+Keep `TRACKER_NETWORK_API_KEY` server-only as well. Browser and mobile clients should call the app's own `/api/tracker/profile` endpoint instead of calling Tracker Network directly.
 
 The current Vercel web client reads only the public URL and publishable key through `/api/config`. It does not send the service role key to the browser.
+
+## Tracker Network
+
+The Vercel backend includes:
+
+```text
+api/tracker/profile.js
+```
+
+This endpoint currently supports Apex Legends rank/profile lookup through Tracker Network using the official `TRN-Api-Key` header. Tracker Network's current developer FAQ says supported public API titles are Apex Legends and The Division 2, with older Splitgate and CS:GO APIs deprecated, so add new games here only when Tracker Network documents and approves them.
 
 ## Recommended Split
 
