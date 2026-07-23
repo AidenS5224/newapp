@@ -82,6 +82,8 @@ http://PI_IP_ADDRESS:8080
 ```
 
 The Android project uses Java and basic Android SDK components only. It has no third-party app dependencies.
+The current screen is a concept-style discovery app with filter chips, profile cards,
+stats, protected-info notices, Login, Sign Up, LFG, squads, and a bottom nav.
 
 The seeded test login is:
 
@@ -132,7 +134,6 @@ Example connection request:
 
 ```json
 {
-  "fromPlayerId": "p_novapulse",
   "toPlayerId": "p_ghost",
   "message": "Want to squad up?"
 }

@@ -5,11 +5,14 @@ Open this folder in Android Studio.
 The project is a simple Java Android client for testing the Raspberry Pi backend:
 
 - configurable API base URL
-- backend health check
-- discovery player cards
+- concept-inspired dark Gamer Connect UI
+- sign up and login controls
+- backend status indicator
+- discovery player cards with badges, stats, and match actions
+- protected Discord/platform info messaging
 - LFG posts
 - squads
-- connection request button
+- authenticated connection request button
 
 ## Backend URL
 
@@ -26,3 +29,12 @@ http://PI_IP_ADDRESS:8080
 ```
 
 The app currently permits cleartext HTTP for local testing. Before real public testing, use HTTPS or a secure tunnel.
+
+## Test Login
+
+```text
+Handle: NovaPulse
+Password: testpass123
+```
+
+Use Login before tapping Connect. Guest mode can browse discovery, but connection requests require a session token.
