@@ -87,7 +87,7 @@ button { cursor: pointer; }
 .session-card span { color: var(--muted); font-size: 12px; }
 .main {
   padding: 24px;
-  max-width: 1200px;
+  max-width: 1320px;
   width: 100%;
 }
 .topbar {
@@ -315,14 +315,39 @@ button { cursor: pointer; }
   background: #08111f;
 }
 .wide-selected-game {
-  grid-template-columns: auto minmax(130px, .8fr) minmax(170px, 1fr) minmax(170px, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
 }
 .wide-selected-game .sync-game-button,
-.wide-selected-game .muted {
-  grid-column: 2 / -1;
+.wide-selected-game .manual-badge {
+  grid-column: 1 / -1;
+}
+.selected-game-title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.selected-game-title span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.game-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 .selected-game label {
   margin: 0;
+}
+.manual-badge {
+  border: 1px solid rgba(245, 158, 11, .4);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #fde68a;
+  text-align: center;
+  background: rgba(245, 158, 11, .08);
 }
 .remove-game {
   width: 36px;
@@ -369,6 +394,10 @@ button { cursor: pointer; }
 .profile-editor {
   display: grid;
   gap: 14px;
+}
+.profile-editor > .grid.two {
+  grid-template-columns: minmax(320px, .9fr) minmax(540px, 1.15fr);
+  align-items: start;
 }
 .editor-head {
   display: flex;
@@ -508,6 +537,7 @@ button { cursor: pointer; }
   .main { padding: 16px; }
   .topbar { align-items: flex-start; flex-direction: column; }
   .two, .three { grid-template-columns: 1fr; }
+  .profile-editor > .grid.two { grid-template-columns: 1fr; }
   .profile-grid { grid-template-columns: 1fr; }
   .profile-banner { min-height: 140px; }
   .profile-head { align-items: center; transform: translateY(-20px); }
@@ -515,6 +545,7 @@ button { cursor: pointer; }
   .profile-avatar { width: 68px; height: 68px; border-radius: 14px; font-size: 22px; }
   .selected-game { grid-template-columns: auto minmax(0, 1fr); }
   .selected-game label { grid-column: 1 / -1; }
+  .game-fields { grid-template-columns: 1fr; }
   .editor-head { flex-direction: column; }
   .auth-layout, .auth-hero { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }

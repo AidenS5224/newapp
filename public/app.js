@@ -463,6 +463,7 @@ function renderSignedInProfile() {
   const stats = profile.stats || {};
   const gameRanks = stats.gameRanks || {};
   const gameStatSources = stats.gameStatSources || {};
+  const gameManualStats = stats.gameManualStats || {};
   return `
     <section class="profile-page">
       <div class="profile-hero-card">
@@ -491,7 +492,9 @@ function renderSignedInProfile() {
           <h3>Top Games</h3>
           ${games.length ? games.map(value => {
             const source = gameStatSources[value] || {};
-            return `<div class="game-rank-row"><span class="pill hot">${escapeHtml(value)}</span><span>${escapeHtml(gameRanks[value] || "Rank not set")} · ${escapeHtml(sourceLabel(source))}</span></div>`;
+            const manual = gameManualStats[value] || {};
+            const profileDetail = [gameRanks[value] || "Rank not set", manual.playlist || "", manual.mmr ? `${manual.mmr} MMR` : "", sourceLabel(source)].filter(Boolean).join(" - ");
+            return `<div class="game-rank-row"><span class="pill hot">${escapeHtml(value)}</span><span>${escapeHtml(profileDetail)}</span></div>`;
           }).join("") : `<p>No games set yet.</p>`}
         </div>
         <div class="card">
@@ -531,6 +534,7 @@ function renderProfileEditor() {
   const selectedGames = draftGames(profile);
   const gameRanks = profile.stats?.gameRanks || {};
   const gameStatSources = profile.stats?.gameStatSources || {};
+  const gameManualStats = profile.stats?.gameManualStats || {};
   const platformAccounts = platformAccountsMap(protectedInfo);
   return `
     <form class="profile-editor" data-save-profile>
@@ -575,16 +579,24 @@ function renderProfileEditor() {
               ${selectedGames.length ? selectedGames.map(game => `
                 <div class="selected-game wide-selected-game">
                   <button class="button dark remove-game" type="button" data-remove-game="${escapeAttribute(game)}">x</button>
-                  <strong>${escapeHtml(game)}</strong>
-                  <label>Rank<input class="field" name="rank_${escapeAttribute(gameKey(game))}" value="${escapeAttribute(gameRanks[game] || "")}" placeholder="Diamond II, Gold, Casual"></label>
-                  <label>Stats Source
-                    <select class="field" name="source_platform_${escapeAttribute(gameKey(game))}">
-                      ${statSourceOptions.map(([value, label]) => `<option value="${escapeAttribute(value)}" ${gameSourcePlatform(gameStatSources, game) === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
-                    </select>
-                  </label>
-                  <label>Source Username / ID<input class="field" name="source_handle_${escapeAttribute(gameKey(game))}" value="${escapeAttribute(gameSourceHandle(gameStatSources, platformAccounts, game))}" placeholder="Use connected handle or enter one for this game"></label>
-                  <button class="button dark sync-game-button" type="button" data-sync-game="${escapeAttribute(game)}">Pull Supported Stats</button>
-                  <span class="muted">${escapeHtml(syncSupportLabel(game))}</span>
+                  <div class="selected-game-title">
+                    <strong>${escapeHtml(game)}</strong>
+                    <span>${escapeHtml(syncSupportLabel(game))}</span>
+                  </div>
+                  <div class="game-fields">
+                    <label>Rank<input class="field" name="rank_${escapeAttribute(gameKey(game))}" value="${escapeAttribute(gameRanks[game] || "")}" placeholder="Diamond II, Champion, Gold"></label>
+                    <label>Playlist<input class="field" name="playlist_${escapeAttribute(gameKey(game))}" value="${escapeAttribute(gameManualStats[game]?.playlist || "")}" placeholder="2v2, 3v3, Ranked"></label>
+                    <label>MMR / Rating<input class="field" name="mmr_${escapeAttribute(gameKey(game))}" value="${escapeAttribute(gameManualStats[game]?.mmr || "")}" placeholder="1042"></label>
+                    <label>Stats Source
+                      <select class="field" name="source_platform_${escapeAttribute(gameKey(game))}">
+                        ${statSourceOptions.map(([value, label]) => `<option value="${escapeAttribute(value)}" ${gameSourcePlatform(gameStatSources, game) === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+                      </select>
+                    </label>
+                    <label>Source Username / ID<input class="field" name="source_handle_${escapeAttribute(gameKey(game))}" value="${escapeAttribute(gameSourceHandle(gameStatSources, platformAccounts, game))}" placeholder="Use connected handle or enter one for this game"></label>
+                  </div>
+                  ${providerForAnyGameSource(game)
+                    ? `<button class="button dark sync-game-button" type="button" data-sync-game="${escapeAttribute(game)}">Pull Supported Stats</button>`
+                    : `<span class="manual-badge">Manual tracking for now</span>`}
                 </div>
               `).join("") : `<p>No games selected yet.</p>`}
             </div>
@@ -601,7 +613,7 @@ function renderProfileEditor() {
           </label>
           <div class="tracker-sync-box">
             <h4>Stats Sources</h4>
-            <p>Connect platform accounts once, then choose which account each game should use for stats. Unsupported games stay manual and are clearly labelled as user-provided.</p>
+            <p>Connect platform accounts once, then choose which account each game should use for stats. Rocket League is enabled here as manual tracking because Tracker Network does not provide a public Rocket League API.</p>
             ${state.trackerMessage ? `<div class="notice small-notice">${escapeHtml(state.trackerMessage)}</div>` : ""}
           </div>
           <label>Availability<input class="field" name="availability" value="${escapeAttribute(availabilityLabel(profile.availability))}" placeholder="Evenings, 7PM - 11PM AEST"></label>
@@ -746,18 +758,28 @@ async function saveProfile(event) {
   const platformAccounts = platformAccountsFromForm(form);
   const gameRanks = {};
   const gameStatSources = {};
+  const gameManualStats = {};
   topGames.forEach(game => {
     const key = gameKey(game);
     const rank = String(form.get(`rank_${key}`) || "").trim();
     if (rank) gameRanks[game] = rank;
+    const playlist = String(form.get(`playlist_${key}`) || "").trim();
+    const mmr = String(form.get(`mmr_${key}`) || "").trim();
     const sourcePlatform = String(form.get(`source_platform_${key}`) || "manual");
     const sourceHandle = String(form.get(`source_handle_${key}`) || platformAccounts[sourcePlatform] || "").trim();
+    const provider = providerForGameSource(game, sourcePlatform);
     gameStatSources[game] = {
       platform: sourcePlatform,
       handle: sourceHandle,
-      provider: providerForGameSource(game, sourcePlatform),
-      sourceType: providerForGameSource(game, sourcePlatform) ? "approved_third_party" : "user_provided",
-      syncStatus: providerForGameSource(game, sourcePlatform) ? "ready_to_sync" : "manual"
+      provider,
+      sourceType: provider ? "approved_third_party" : "user_provided",
+      syncStatus: provider ? "ready_to_sync" : "manual"
+    };
+    gameManualStats[game] = {
+      playlist,
+      mmr,
+      sourceType: provider ? "approved_third_party" : "user_provided",
+      updatedAt: new Date().toISOString()
     };
   });
   const profile = {
@@ -774,7 +796,7 @@ async function saveProfile(event) {
     availability: { summary: String(form.get("availability") || "").trim() },
     avatar_url: String(form.get("avatar_url") || "").trim() || null,
     platforms: selectedPublicPlatforms(platformAccounts),
-    stats: { ...(state.profile.stats || {}), gameRanks, gameStatSources }
+    stats: { ...(state.profile.stats || {}), gameRanks, gameStatSources, gameManualStats }
   };
   const { data, error } = await state.supabase.from("profiles").upsert(profile).select("*").single();
   if (error) return alert(error.message);
@@ -902,6 +924,15 @@ async function syncGameStats(game) {
             sourceType: "approved_third_party",
             syncStatus: result.rank ? "synced" : "synced_no_rank",
             lastSyncedAt: new Date().toISOString()
+          }
+        },
+        gameManualStats: {
+          ...(existingStats.gameManualStats || {}),
+          [game]: {
+            playlist: result.normalizedRank?.playlist || existingStats.gameManualStats?.[game]?.playlist || "",
+            mmr: result.normalizedRank?.numericValue || existingStats.gameManualStats?.[game]?.mmr || "",
+            sourceType: "approved_third_party",
+            updatedAt: new Date().toISOString()
           }
         }
       }
@@ -1103,6 +1134,10 @@ function syncSupportLabel(game) {
 
 function providerForGameSource(game, platform) {
   return trackerGameSupport[game]?.platforms[platform] ? "tracker-network" : "";
+}
+
+function providerForAnyGameSource(game) {
+  return Boolean(trackerGameSupport[game]);
 }
 
 function gameSourcePlatform(gameStatSources, game) {

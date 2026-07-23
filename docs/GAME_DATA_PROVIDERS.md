@@ -93,6 +93,8 @@ Current enabled support:
 
 The UI also supports selecting non-Tracker platforms as stats sources so game accounts can be modeled before a provider exists. Those entries are labelled as user-provided until an approved provider can fetch data.
 
+Rocket League is currently enabled in the profile editor as manual tracking: users can save rank, playlist, MMR/rating, source platform, and source username. Do not call undocumented Tracker Network Rocket League endpoints; add automatic Rocket League sync only after an approved public provider is available.
+
 Tracker Network requests require the `TRN-Api-Key` header. Store the key only as `TRACKER_NETWORK_API_KEY` or `TRN_API_KEY` in Vercel/server environment variables.
 
 ## Steam, Riot, And Bungie
