@@ -92,6 +92,46 @@ Discovery only returns linked account summaries publicly. Actual Discord, Steam,
 Tracker Network, Xbox, Riot, and protected profile values are shown to the
 profile owner, the owner panel, or players with an accepted connection.
 
+## Feed
+
+```text
+GET  /api/feed
+GET  /api/feed/{post_id}/comments
+POST /api/feed/posts
+POST /api/feed/{post_id}/react
+POST /api/feed/{post_id}/comments
+```
+
+Create a post or clip:
+
+```json
+{
+  "type": "clip",
+  "gameId": "apex-legends",
+  "title": "Ranked clutch",
+  "body": "Looking for two calm teammates.",
+  "mediaType": "video"
+}
+```
+
+## Messages
+
+```text
+GET  /api/conversations
+GET  /api/conversations/{conversation_id}/messages
+POST /api/conversations
+POST /api/conversations/{conversation_id}/messages
+```
+
+Create a chat:
+
+```json
+{
+  "participantPlayerIds": ["p_ghost"],
+  "message": "Want to squad up?"
+}
+```
+
 ## Control Terminal
 
 From the project root:
@@ -118,6 +158,8 @@ One-off commands:
 python3 control.py status
 python3 control.py players
 python3 control.py lfg
+python3 control.py feed
+python3 control.py conversations
 python3 control.py connections
 python3 control.py online p_ghost on
 python3 control.py export ./data/export.json

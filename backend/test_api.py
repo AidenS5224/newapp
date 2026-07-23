@@ -81,6 +81,7 @@ def main() -> None:
         players = get_json("/api/players?game=apex-legends")["players"]
         lfg = get_json("/api/lfg")["posts"]
         squads = get_json("/api/squads")["squads"]
+        feed = get_json("/api/feed")["posts"]
         login = post_json(
             "/api/auth/login",
             {"emailOrHandle": "NovaPulse", "password": "testpass123"},
@@ -102,6 +103,7 @@ def main() -> None:
         assert "GhostRider#7741" not in json.dumps(ghost_public), "expected protected account value to stay hidden"
         assert lfg, "expected seeded LFG posts"
         assert squads, "expected seeded squads"
+        assert feed, "expected seeded feed posts"
         assert request["status"] == "pending", "expected pending connection request"
         assert get_json("/api/me", token=token)["user"]["player"]["id"] == "p_novapulse", "expected logged-in profile"
 
@@ -146,6 +148,37 @@ def main() -> None:
             },
         )
         assert signup["token"], "expected signup token"
+
+        created_post = post_json(
+            "/api/feed/posts",
+            {
+                "type": "clip",
+                "gameId": "apex-legends",
+                "title": "Smoke test clip",
+                "body": "Testing feed post creation.",
+                "mediaType": "video",
+            },
+            token=token,
+        )["post"]
+        assert created_post["type"] == "clip", "expected created clip post"
+        reaction = post_json(f"/api/feed/{created_post['id']}/react", {"reaction": "like"}, token=token)
+        assert reaction["reaction"] == "like", "expected feed reaction"
+        comment = post_json(f"/api/feed/{created_post['id']}/comments", {"body": "Nice clip."}, token=token)["comment"]
+        assert comment["body"] == "Nice clip.", "expected feed comment"
+
+        conversations = get_json("/api/conversations", token=token)["conversations"]
+        assert conversations, "expected seeded conversations"
+        new_conversation = post_json(
+            "/api/conversations",
+            {"participantPlayerIds": ["p_zane"], "message": "Want to review clips?"},
+            token=token,
+        )["conversation"]
+        message = post_json(
+            f"/api/conversations/{new_conversation['id']}/messages",
+            {"body": "Starting this chat from the smoke test."},
+            token=token,
+        )["message"]
+        assert message["body"] == "Starting this chat from the smoke test.", "expected sent message"
 
         print("API smoke test passed")
     finally:

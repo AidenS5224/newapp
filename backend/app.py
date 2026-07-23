@@ -200,6 +200,60 @@ def init_db() -> None:
                 status TEXT NOT NULL,
                 created_at INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS feed_posts (
+                id TEXT PRIMARY KEY,
+                player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+                post_type TEXT NOT NULL,
+                game_id TEXT,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL,
+                media_url TEXT,
+                media_type TEXT,
+                visibility TEXT NOT NULL DEFAULT 'public',
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS feed_reactions (
+                post_id TEXT NOT NULL REFERENCES feed_posts(id) ON DELETE CASCADE,
+                player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+                reaction TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (post_id, player_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS feed_comments (
+                id TEXT PRIMARY KEY,
+                post_id TEXT NOT NULL REFERENCES feed_posts(id) ON DELETE CASCADE,
+                player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+                body TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS conversations (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                conversation_type TEXT NOT NULL,
+                created_by_player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS conversation_participants (
+                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+                role TEXT NOT NULL DEFAULT 'member',
+                joined_at INTEGER NOT NULL,
+                PRIMARY KEY (conversation_id, player_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                sender_player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+                body TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
             """
         )
         ensure_column(conn, "players", "protected_info", "TEXT NOT NULL DEFAULT '{}'")
@@ -211,6 +265,7 @@ def seed(conn: sqlite3.Connection) -> None:
     existing = conn.execute("SELECT COUNT(*) AS total FROM players").fetchone()["total"]
     if existing:
         seed_test_accounts(conn)
+        seed_social_data(conn)
         return
 
     now = int(time.time())
@@ -352,6 +407,7 @@ def seed(conn: sqlite3.Connection) -> None:
             ("s_oce_clutch", "OCE Clutch", "valorant", "Small Valorant group looking for friendly competitive players.", json.dumps(["p_zane"]), 2, "Discord", "Weeknights"),
         ],
     )
+    seed_social_data(conn)
 
 
 def seed_test_accounts(conn: sqlite3.Connection) -> None:
@@ -367,6 +423,80 @@ def seed_test_accounts(conn: sqlite3.Connection) -> None:
         VALUES (?, ?, ?, ?, ?, ?)
         """,
         [(uid, email, handle, hash_password("testpass123"), player_id, now) for uid, email, handle, player_id in seed_accounts],
+    )
+
+
+def seed_social_data(conn: sqlite3.Connection) -> None:
+    if conn.execute("SELECT COUNT(*) AS total FROM feed_posts").fetchone()["total"]:
+        return
+    now = int(time.time())
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO feed_posts (
+            id, player_id, post_type, game_id, title, body, media_url, media_type, visibility, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            ("post_clip_nova_1", "p_novapulse", "clip", "apex-legends", "Ranked clutch from last night", "Looking for two calm teammates for the next push.", None, "video", "public", now - 3600),
+            ("post_group_weekend_1", "p_ghost", "event", "apex-legends", "Friday squad night is open", "Bring comms, good vibes, and a warm-up game.", None, None, "public", now - 2400),
+            ("post_zane_routes_1", "p_zane", "post", "valorant", "Entry routes I am testing", "Drop your best retake setup for split-site pushes.", None, None, "public", now - 1200),
+        ],
+    )
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO feed_reactions (post_id, player_id, reaction, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        [
+            ("post_clip_nova_1", "p_ghost", "like", now - 3300),
+            ("post_clip_nova_1", "p_zane", "like", now - 3100),
+            ("post_group_weekend_1", "p_novapulse", "like", now - 2100),
+        ],
+    )
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO feed_comments (id, post_id, player_id, body, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            ("comment_clip_1", "post_clip_nova_1", "p_ghost", "Clean rotate. I am in for tonight.", now - 3000),
+            ("comment_group_1", "post_group_weekend_1", "p_zane", "Can join after warmups.", now - 1900),
+        ],
+    )
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO conversations (id, title, conversation_type, created_by_player_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        [
+            ("conv_nova_ghost", "NovaPulse / GhostRider", "direct", "p_novapulse", now - 1800, now - 600),
+            ("conv_weekend", "Weekend Warriors", "group", "p_ghost", now - 7200, now - 900),
+        ],
+    )
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO conversation_participants (conversation_id, player_id, role, joined_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        [
+            ("conv_nova_ghost", "p_novapulse", "member", now - 1800),
+            ("conv_nova_ghost", "p_ghost", "member", now - 1800),
+            ("conv_weekend", "p_novapulse", "member", now - 7200),
+            ("conv_weekend", "p_ghost", "owner", now - 7200),
+            ("conv_weekend", "p_zane", "member", now - 7000),
+        ],
+    )
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO messages (id, conversation_id, sender_player_id, body, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            ("msg_nova_ghost_1", "conv_nova_ghost", "p_ghost", "Saw your clip. Want to run ranked tonight?", now - 1200),
+            ("msg_nova_ghost_2", "conv_nova_ghost", "p_novapulse", "Yep. 7PM AEST works.", now - 600),
+            ("msg_weekend_1", "conv_weekend", "p_ghost", "Friday squad night is open.", now - 900),
+        ],
     )
 
 
@@ -651,6 +781,167 @@ def list_connection_requests(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     ]
 
 
+def list_feed_posts(conn: sqlite3.Connection, viewer_player_id: str | None = None) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT fp.*, p.handle, p.display_name, g.name AS game_name,
+               COUNT(DISTINCT fr.player_id) AS reaction_count,
+               COUNT(DISTINCT fc.id) AS comment_count,
+               MAX(CASE WHEN fr.player_id = ? THEN 1 ELSE 0 END) AS reacted_by_viewer
+        FROM feed_posts fp
+        JOIN players p ON p.id = fp.player_id
+        LEFT JOIN games g ON g.id = fp.game_id
+        LEFT JOIN feed_reactions fr ON fr.post_id = fp.id
+        LEFT JOIN feed_comments fc ON fc.post_id = fp.id
+        WHERE fp.visibility = 'public'
+        GROUP BY fp.id
+        ORDER BY fp.created_at DESC
+        """,
+        (viewer_player_id or "",),
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "playerId": row["player_id"],
+            "handle": row["handle"],
+            "displayName": row["display_name"],
+            "type": row["post_type"],
+            "gameId": row["game_id"],
+            "gameName": row["game_name"],
+            "title": row["title"],
+            "body": row["body"],
+            "mediaUrl": row["media_url"],
+            "mediaType": row["media_type"],
+            "visibility": row["visibility"],
+            "reactionCount": row["reaction_count"],
+            "commentCount": row["comment_count"],
+            "reactedByViewer": bool(row["reacted_by_viewer"]),
+            "createdAt": row["created_at"],
+            "created": time.strftime("%Y-%m-%d %H:%M", time.localtime(row["created_at"])),
+        }
+        for row in rows
+    ]
+
+
+def list_feed_comments(conn: sqlite3.Connection, post_id: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT fc.*, p.handle, p.display_name
+        FROM feed_comments fc
+        JOIN players p ON p.id = fc.player_id
+        WHERE fc.post_id = ?
+        ORDER BY fc.created_at ASC
+        """,
+        (post_id,),
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "postId": row["post_id"],
+            "playerId": row["player_id"],
+            "handle": row["handle"],
+            "displayName": row["display_name"],
+            "body": row["body"],
+            "createdAt": row["created_at"],
+            "created": time.strftime("%Y-%m-%d %H:%M", time.localtime(row["created_at"])),
+        }
+        for row in rows
+    ]
+
+
+def list_conversations(conn: sqlite3.Connection, player_id: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT c.*,
+               m.body AS last_message,
+               m.created_at AS last_message_at
+        FROM conversations c
+        JOIN conversation_participants cp ON cp.conversation_id = c.id
+        LEFT JOIN messages m ON m.id = (
+            SELECT id FROM messages
+            WHERE conversation_id = c.id
+            ORDER BY created_at DESC
+            LIMIT 1
+        )
+        WHERE cp.player_id = ?
+        ORDER BY c.updated_at DESC
+        """,
+        (player_id,),
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "title": row["title"],
+            "type": row["conversation_type"],
+            "createdByPlayerId": row["created_by_player_id"],
+            "lastMessage": row["last_message"],
+            "lastMessageAt": row["last_message_at"],
+            "updatedAt": row["updated_at"],
+            "participants": conversation_participants(conn, row["id"]),
+        }
+        for row in rows
+    ]
+
+
+def conversation_participants(conn: sqlite3.Connection, conversation_id: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT cp.*, p.handle, p.display_name
+        FROM conversation_participants cp
+        JOIN players p ON p.id = cp.player_id
+        WHERE cp.conversation_id = ?
+        ORDER BY cp.joined_at ASC
+        """,
+        (conversation_id,),
+    ).fetchall()
+    return [
+        {
+            "playerId": row["player_id"],
+            "handle": row["handle"],
+            "displayName": row["display_name"],
+            "role": row["role"],
+            "joinedAt": row["joined_at"],
+        }
+        for row in rows
+    ]
+
+
+def list_messages(conn: sqlite3.Connection, conversation_id: str, player_id: str) -> list[dict[str, Any]]:
+    if not is_conversation_member(conn, conversation_id, player_id):
+        raise PermissionError("Conversation not found")
+    rows = conn.execute(
+        """
+        SELECT m.*, p.handle, p.display_name
+        FROM messages m
+        JOIN players p ON p.id = m.sender_player_id
+        WHERE m.conversation_id = ?
+        ORDER BY m.created_at ASC
+        """,
+        (conversation_id,),
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "conversationId": row["conversation_id"],
+            "senderPlayerId": row["sender_player_id"],
+            "handle": row["handle"],
+            "displayName": row["display_name"],
+            "body": row["body"],
+            "createdAt": row["created_at"],
+            "created": time.strftime("%Y-%m-%d %H:%M", time.localtime(row["created_at"])),
+        }
+        for row in rows
+    ]
+
+
+def is_conversation_member(conn: sqlite3.Connection, conversation_id: str, player_id: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM conversation_participants WHERE conversation_id = ? AND player_id = ?",
+        (conversation_id, player_id),
+    ).fetchone()
+    return bool(row)
+
+
 def top_games(players: list[dict[str, Any]], games: list[dict[str, Any]]) -> list[dict[str, Any]]:
     names = {game["id"]: game["name"] for game in games}
     counts: dict[str, int] = {}
@@ -668,7 +959,9 @@ def admin_overview(conn: sqlite3.Connection) -> dict[str, Any]:
     games = list_games(conn)
     lfg_posts = list_lfg(conn)
     squads = list_squads(conn)
+    feed_posts = list_feed_posts(conn)
     connection_requests = list_connection_requests(conn)
+    conversations = conn.execute("SELECT COUNT(*) AS total FROM conversations").fetchone()["total"]
     pending = [request for request in connection_requests if request["status"] == "pending"]
     return {
         "summary": {
@@ -678,6 +971,8 @@ def admin_overview(conn: sqlite3.Connection) -> dict[str, Any]:
                 "games": len(games),
                 "lfgPosts": len(lfg_posts),
                 "squads": len(squads),
+                "feedPosts": len(feed_posts),
+                "conversations": conversations,
                 "connectionRequests": len(connection_requests),
                 "pendingConnections": len(pending),
             },
@@ -687,6 +982,7 @@ def admin_overview(conn: sqlite3.Connection) -> dict[str, Any]:
         "games": games,
         "lfgPosts": lfg_posts,
         "squads": squads,
+        "feedPosts": feed_posts,
         "connectionRequests": connection_requests,
         "system": {
             "app": APP_NAME,
@@ -706,6 +1002,12 @@ def reset_database() -> None:
         conn.executescript(
             """
             DROP TABLE IF EXISTS connection_requests;
+            DROP TABLE IF EXISTS messages;
+            DROP TABLE IF EXISTS conversation_participants;
+            DROP TABLE IF EXISTS conversations;
+            DROP TABLE IF EXISTS feed_comments;
+            DROP TABLE IF EXISTS feed_reactions;
+            DROP TABLE IF EXISTS feed_posts;
             DROP TABLE IF EXISTS squads;
             DROP TABLE IF EXISTS lfg_posts;
             DROP TABLE IF EXISTS sessions;
@@ -750,6 +1052,29 @@ class ApiHandler(BaseHTTPRequestHandler):
                     self.send_json({"exportedAt": int(time.time()), "data": admin_overview(conn)})
                 elif parsed.path == "/api/games":
                     self.send_json({"games": list_games(conn)})
+                elif parsed.path == "/api/feed":
+                    user = self.current_user(conn)
+                    viewer_player_id = user["player_id"] if user else None
+                    self.send_json({"posts": list_feed_posts(conn, viewer_player_id)})
+                elif parsed.path.startswith("/api/feed/") and parsed.path.endswith("/comments"):
+                    post_id = parsed.path.split("/")[3]
+                    self.send_json({"comments": list_feed_comments(conn, post_id)})
+                elif parsed.path == "/api/conversations":
+                    user = self.current_user(conn)
+                    if not user:
+                        self.send_error_json(HTTPStatus.UNAUTHORIZED, "Login required")
+                        return
+                    self.send_json({"conversations": list_conversations(conn, user["player_id"])})
+                elif parsed.path.startswith("/api/conversations/") and parsed.path.endswith("/messages"):
+                    user = self.current_user(conn)
+                    if not user:
+                        self.send_error_json(HTTPStatus.UNAUTHORIZED, "Login required")
+                        return
+                    conversation_id = parsed.path.split("/")[3]
+                    try:
+                        self.send_json({"messages": list_messages(conn, conversation_id, user["player_id"])})
+                    except PermissionError:
+                        self.send_error_json(HTTPStatus.NOT_FOUND, "Conversation not found")
                 elif parsed.path == "/api/players":
                     user = self.current_user(conn)
                     viewer_player_id = user["player_id"] if user else None
@@ -814,6 +1139,75 @@ class ApiHandler(BaseHTTPRequestHandler):
                     self.update_profile(conn, user["player_id"], payload)
                     refreshed = conn.execute("SELECT * FROM user_accounts WHERE id = ?", (user["id"],)).fetchone()
                     self.send_json({"user": user_payload(conn, refreshed)})
+                elif parsed.path == "/api/feed/posts":
+                    user = self.current_user(conn)
+                    if not user:
+                        self.send_error_json(HTTPStatus.UNAUTHORIZED, "Login required")
+                        return
+                    post_id = self.create_feed_post(conn, user["player_id"], payload)
+                    self.send_json({"post": next(post for post in list_feed_posts(conn, user["player_id"]) if post["id"] == post_id)}, HTTPStatus.CREATED)
+                elif parsed.path.startswith("/api/feed/") and parsed.path.endswith("/react"):
+                    user = self.current_user(conn)
+                    if not user:
+                        self.send_error_json(HTTPStatus.UNAUTHORIZED, "Login required")
+                        return
+                    post_id = parsed.path.split("/")[3]
+                    reaction = str(payload.get("reaction") or "like")
+                    conn.execute(
+                        """
+                        INSERT INTO feed_reactions (post_id, player_id, reaction, created_at)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(post_id, player_id) DO UPDATE SET reaction = excluded.reaction, created_at = excluded.created_at
+                        """,
+                        (post_id, user["player_id"], reaction, int(time.time())),
+                    )
+                    self.send_json({"postId": post_id, "reaction": reaction})
+                elif parsed.path.startswith("/api/feed/") and parsed.path.endswith("/comments"):
+                    user = self.current_user(conn)
+                    if not user:
+                        self.send_error_json(HTTPStatus.UNAUTHORIZED, "Login required")
+                        return
+                    post_id = parsed.path.split("/")[3]
+                    body = str(payload.get("body") or "").strip()
+                    if not body:
+                        self.send_error_json(HTTPStatus.BAD_REQUEST, "Comment body is required")
+                        return
+                    comment_id = f"comment_{int(time.time() * 1000)}_{secrets.token_hex(3)}"
+                    conn.execute(
+                        "INSERT INTO feed_comments (id, post_id, player_id, body, created_at) VALUES (?, ?, ?, ?, ?)",
+                        (comment_id, post_id, user["player_id"], body, int(time.time())),
+                    )
+                    self.send_json({"comment": list_feed_comments(conn, post_id)[-1]}, HTTPStatus.CREATED)
+                elif parsed.path == "/api/conversations":
+                    user = self.current_user(conn)
+                    if not user:
+                        self.send_error_json(HTTPStatus.UNAUTHORIZED, "Login required")
+                        return
+                    conversation_id = self.create_conversation(conn, user["player_id"], payload)
+                    conversation = next(item for item in list_conversations(conn, user["player_id"]) if item["id"] == conversation_id)
+                    self.send_json({"conversation": conversation}, HTTPStatus.CREATED)
+                elif parsed.path.startswith("/api/conversations/") and parsed.path.endswith("/messages"):
+                    user = self.current_user(conn)
+                    if not user:
+                        self.send_error_json(HTTPStatus.UNAUTHORIZED, "Login required")
+                        return
+                    conversation_id = parsed.path.split("/")[3]
+                    if not is_conversation_member(conn, conversation_id, user["player_id"]):
+                        self.send_error_json(HTTPStatus.NOT_FOUND, "Conversation not found")
+                        return
+                    body = str(payload.get("body") or "").strip()
+                    if not body:
+                        self.send_error_json(HTTPStatus.BAD_REQUEST, "Message body is required")
+                        return
+                    message_id = f"msg_{int(time.time() * 1000)}_{secrets.token_hex(3)}"
+                    now = int(time.time())
+                    conn.execute(
+                        "INSERT INTO messages (id, conversation_id, sender_player_id, body, created_at) VALUES (?, ?, ?, ?, ?)",
+                        (message_id, conversation_id, user["player_id"], body, now),
+                    )
+                    conn.execute("UPDATE conversations SET updated_at = ? WHERE id = ?", (now, conversation_id))
+                    message = list_messages(conn, conversation_id, user["player_id"])[-1]
+                    self.send_json({"message": message}, HTTPStatus.CREATED)
                 elif parsed.path == "/api/admin/player-online":
                     if not self.is_admin(parse_qs(parsed.query)):
                         return
@@ -918,6 +1312,81 @@ class ApiHandler(BaseHTTPRequestHandler):
             raise ValueError("No profile fields supplied")
         values.append(player_id)
         conn.execute(f"UPDATE players SET {', '.join(updates)} WHERE id = ?", values)
+
+    def create_feed_post(self, conn: sqlite3.Connection, player_id: str, payload: dict[str, Any]) -> str:
+        title = str(payload.get("title") or "").strip()
+        body = str(payload.get("body") or "").strip()
+        post_type = str(payload.get("type") or payload.get("postType") or "post").strip().lower()
+        if post_type not in {"post", "clip", "event"}:
+            raise ValueError("type must be post, clip, or event")
+        if not title:
+            raise ValueError("Feed post title is required")
+        if not body:
+            raise ValueError("Feed post body is required")
+        post_id = f"post_{int(time.time() * 1000)}_{secrets.token_hex(3)}"
+        conn.execute(
+            """
+            INSERT INTO feed_posts (
+                id, player_id, post_type, game_id, title, body, media_url, media_type, visibility, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                post_id,
+                player_id,
+                post_type,
+                payload.get("gameId"),
+                title,
+                body,
+                payload.get("mediaUrl"),
+                payload.get("mediaType"),
+                payload.get("visibility") or "public",
+                int(time.time()),
+            ),
+        )
+        return post_id
+
+    def create_conversation(self, conn: sqlite3.Connection, player_id: str, payload: dict[str, Any]) -> str:
+        participant_ids = payload.get("participantPlayerIds") or payload.get("participants") or []
+        if not isinstance(participant_ids, list):
+            raise ValueError("participantPlayerIds must be a list")
+        clean_ids = []
+        for participant_id in participant_ids:
+            participant_id = str(participant_id).strip()
+            if participant_id and participant_id not in clean_ids and participant_id != player_id:
+                clean_ids.append(participant_id)
+        if not clean_ids:
+            raise ValueError("At least one other participant is required")
+        for participant_id in clean_ids:
+            if not conn.execute("SELECT 1 FROM players WHERE id = ?", (participant_id,)).fetchone():
+                raise ValueError(f"Player not found: {participant_id}")
+
+        conversation_type = "group" if len(clean_ids) > 1 else "direct"
+        title = str(payload.get("title") or "").strip()
+        if not title:
+            handles = conn.execute(
+                f"SELECT handle FROM players WHERE id IN ({','.join('?' for _ in clean_ids)})",
+                clean_ids,
+            ).fetchall()
+            title = ", ".join(row["handle"] for row in handles) or "New Chat"
+        conversation_id = f"conv_{int(time.time() * 1000)}_{secrets.token_hex(3)}"
+        now = int(time.time())
+        conn.execute(
+            "INSERT INTO conversations (id, title, conversation_type, created_by_player_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (conversation_id, title, conversation_type, player_id, now, now),
+        )
+        participants = [player_id, *clean_ids]
+        conn.executemany(
+            "INSERT INTO conversation_participants (conversation_id, player_id, role, joined_at) VALUES (?, ?, ?, ?)",
+            [(conversation_id, participant_id, "owner" if participant_id == player_id else "member", now) for participant_id in participants],
+        )
+        first_message = str(payload.get("message") or "").strip()
+        if first_message:
+            conn.execute(
+                "INSERT INTO messages (id, conversation_id, sender_player_id, body, created_at) VALUES (?, ?, ?, ?, ?)",
+                (f"msg_{int(time.time() * 1000)}_{secrets.token_hex(3)}", conversation_id, player_id, first_message, now),
+            )
+        return conversation_id
 
     def is_admin(self, query: dict[str, list[str]]) -> bool:
         expected = admin_token()

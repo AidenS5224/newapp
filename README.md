@@ -4,6 +4,8 @@ First working build path for the Gamer Connect product:
 
 - `backend/`: Raspberry Pi-friendly API server using Python standard library + SQLite.
 - `android/`: native Android test client scaffold that can call the backend over Wi-Fi.
+- `supabase/`: hosted Postgres/Auth schema for the production path.
+- `public/` + `vercel.json`: starter Vercel web/PC deployment scaffold.
 
 ## Current Backend Features
 
@@ -15,6 +17,8 @@ First working build path for the Gamer Connect product:
 - Sign up, login, logout, and bearer-token sessions
 - Protected linked account/contact info that only unlocks for the player, the owner panel, or accepted connections
 - Private owner dashboard with analytics and backend controls
+- Feed posts, clips, reactions, and comments
+- Conversations and messages
 - Local control terminal for inspecting and editing test data
 - CORS enabled for later web/PWA clients
 
@@ -103,12 +107,21 @@ GET  /api/players?platform=PC
 GET  /api/players/{id}
 GET  /api/lfg
 GET  /api/squads
+GET  /api/feed
+GET  /api/feed/{post_id}/comments
+GET  /api/conversations
+GET  /api/conversations/{conversation_id}/messages
 GET  /api/me
 POST /api/auth/signup
 POST /api/auth/login
 POST /api/auth/logout
 POST /api/me/profile
 POST /api/connections
+POST /api/feed/posts
+POST /api/feed/{post_id}/react
+POST /api/feed/{post_id}/comments
+POST /api/conversations
+POST /api/conversations/{conversation_id}/messages
 ```
 
 Authenticated routes use:
@@ -148,6 +161,20 @@ Example connection request:
 - Add HTTPS/tunnel guidance before outside testers use the Pi.
 - Add Discord OAuth test integration.
 
+## Supabase And Vercel
+
+Hosted project files are included:
+
+```text
+supabase/migrations/0001_gamer_connect.sql
+vercel.json
+public/index.html
+.env.example
+docs/SUPABASE_VERCEL.md
+```
+
+Use the local Python backend for Raspberry Pi testing. Use Supabase + Vercel when you are ready to host auth, feed, messaging, and the web/PC client.
+
 ## Backend Control Terminal
 
 ```powershell
@@ -163,6 +190,8 @@ player p_novapulse
 online p_ghost on
 lfg
 squads
+feed
+conversations
 connections
 export ./data/export.json
 reset

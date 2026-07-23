@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app import DB_PATH, db, init_db, list_games, list_lfg, list_players, list_squads, row_to_player
+from app import DB_PATH, db, init_db, list_feed_posts, list_games, list_lfg, list_players, list_squads, row_to_player
 
 
 PROMPT = "gamer-connect> "
@@ -47,6 +47,8 @@ Commands:
   online <player_id> <on|off>  Set test online state
   lfg                          List looking-for-group posts
   squads                       List squads
+  feed                         List feed posts
+  conversations                List conversations
   connections                  List connection requests
   approve <request_id>         Mark a connection request accepted
   reject <request_id>          Mark a connection request rejected
@@ -61,7 +63,7 @@ def command_status(_: list[str]) -> None:
     init_db()
     with db() as conn:
         rows = []
-        for table in ("games", "players", "lfg_posts", "squads", "connection_requests"):
+        for table in ("games", "players", "lfg_posts", "squads", "feed_posts", "conversations", "messages", "connection_requests"):
             total = conn.execute(f"SELECT COUNT(*) AS total FROM {table}").fetchone()["total"]
             rows.append([table, total])
     print(f"Database: {DB_PATH}")
@@ -167,6 +169,46 @@ def command_connections(_: list[str]) -> None:
     )
 
 
+def command_feed(_: list[str]) -> None:
+    init_db()
+    with db() as conn:
+        rows = [
+            [post["id"], post["type"], post["handle"], post["gameName"], post["title"], post["reactionCount"], post["commentCount"]]
+            for post in list_feed_posts(conn)
+        ]
+    print_table(["id", "type", "author", "game", "title", "likes", "comments"], rows)
+
+
+def command_conversations(_: list[str]) -> None:
+    init_db()
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.id, c.title, c.conversation_type, p.handle AS created_by, c.updated_at,
+                   COUNT(cp.player_id) AS participants
+            FROM conversations c
+            JOIN players p ON p.id = c.created_by_player_id
+            LEFT JOIN conversation_participants cp ON cp.conversation_id = c.id
+            GROUP BY c.id
+            ORDER BY c.updated_at DESC
+            """
+        ).fetchall()
+    print_table(
+        ["id", "title", "type", "created_by", "members", "updated"],
+        [
+            [
+                row["id"],
+                row["title"],
+                row["conversation_type"],
+                row["created_by"],
+                row["participants"],
+                datetime.fromtimestamp(row["updated_at"]).strftime("%Y-%m-%d %H:%M"),
+            ]
+            for row in rows
+        ],
+    )
+
+
 def update_connection_status(args: list[str], status: str) -> None:
     if len(args) != 1:
         raise ValueError(f"Usage: {status} <request_id>")
@@ -190,6 +232,9 @@ def command_export(args: list[str]) -> None:
             "lfgPosts": list_lfg(conn),
             "squads": list_squads(conn),
             "connectionRequests": conn.execute("SELECT * FROM connection_requests ORDER BY created_at DESC").fetchall(),
+            "feedPosts": list_feed_posts(conn),
+            "conversations": conn.execute("SELECT * FROM conversations ORDER BY updated_at DESC").fetchall(),
+            "messages": conn.execute("SELECT * FROM messages ORDER BY created_at ASC").fetchall(),
         }
     output.write_text(json.dumps(data, indent=2), encoding="utf-8")
     print(f"Exported {output}")
@@ -211,6 +256,8 @@ COMMANDS = {
     "online": command_online,
     "lfg": command_lfg,
     "squads": command_squads,
+    "feed": command_feed,
+    "conversations": command_conversations,
     "connections": command_connections,
     "approve": lambda args: update_connection_status(args, "accepted"),
     "reject": lambda args: update_connection_status(args, "rejected"),

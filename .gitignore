@@ -3,6 +3,8 @@ backend/data/*.sqlite3-*
 backend/data/admin_token.txt
 backend/__pycache__/
 *.pyc
+.env
+.env.local
 .gradle/
 build/
 app/build/
