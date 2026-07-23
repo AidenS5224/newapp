@@ -7,7 +7,9 @@ const tabs = [
 ];
 
 const state = {
-  tab: "feed",
+  tab: "profile",
+  authMode: "signup",
+  authMessage: "",
   ready: false,
   config: null,
   supabase: null,
@@ -32,8 +34,10 @@ async function boot() {
   if (state.supabase) {
     const { data } = await state.supabase.auth.getSession();
     state.session = data.session;
+    if (state.session) state.tab = "feed";
     state.supabase.auth.onAuthStateChange((_event, session) => {
       state.session = session;
+      if (session && state.tab === "profile") state.tab = "feed";
       loadData();
     });
   }
@@ -98,21 +102,27 @@ async function ensureProfile() {
     state.profile = data;
     return;
   }
-  const fallback = (user.email || "player").split("@")[0].replace(/[^a-z0-9_]/gi, "").slice(0, 18) || "Player";
+  const meta = user.user_metadata || {};
+  const fallback = (meta.handle || user.email || "player").split("@")[0].replace(/[^a-z0-9_]/gi, "").slice(0, 18) || "Player";
   const profile = {
     id: user.id,
-    handle: fallback,
-    display_name: fallback,
-    region: "Australia",
-    timezone: "AEST",
-    platforms: ["PC"],
-    top_games: ["apex-legends"],
-    rank: "Unranked",
-    play_style: ["Good Comms"],
-    bio: "New Gamer Connect player."
+    handle: meta.handle || fallback,
+    display_name: meta.display_name || meta.handle || fallback,
+    age: numberOrNull(meta.age),
+    region: meta.region || "Australia",
+    timezone: meta.timezone || "AEST",
+    platforms: meta.platforms || ["PC"],
+    top_games: meta.top_games || ["apex-legends"],
+    rank: meta.rank || "Unranked",
+    play_style: meta.play_style || ["Good Comms"],
+    availability: meta.availability || {},
+    bio: meta.bio || "New Gamer Connect player."
   };
   const { data: created, error } = await state.supabase.from("profiles").insert(profile).select("*").single();
-  if (!error) state.profile = created;
+  if (!error) {
+    state.profile = created;
+    await savePrivateSetup(user.id, meta);
+  }
 }
 
 async function loadConversations() {
@@ -160,11 +170,26 @@ function renderShell() {
 
 function renderMain() {
   if (!state.ready) return renderConfigMissing();
+  if (!state.session && state.tab !== "profile") return renderAuthGate();
   if (state.tab === "feed") return renderFeed();
   if (state.tab === "discovery") return renderDiscovery();
   if (state.tab === "messages") return renderMessages();
   if (state.tab === "events") return renderEventsServers();
   return renderProfile();
+}
+
+function renderAuthGate() {
+  return page("Create Your Gamer Connect Account", "Set up your profile before jumping into feed, LFG, messages, and servers.", `
+    <div class="auth-hero">
+      <div>
+        <span class="pill hot">Protected profile setup</span>
+        <h3>Find better teammates from day one.</h3>
+        <p>Your public profile helps players match with your game, region, play style, rank, and availability. Discord, Tracker Network, Steam, and other handles stay protected until you approve a connection.</p>
+      </div>
+      <button class="button green" data-profile-tab>Create Account</button>
+    </div>
+    ${renderAuthForms()}
+  `);
 }
 
 function page(title, subtitle, body) {
@@ -311,22 +336,93 @@ function renderProfile() {
 }
 
 function renderAuthForms() {
+  const isSignup = state.authMode === "signup";
   return `
-    <div class="grid two">
-      <form class="card profile-card" data-sign-in>
-        <h3>Sign In</h3>
-        <input class="field" name="email" type="email" placeholder="Email" required>
-        <input class="field" name="password" type="password" placeholder="Password" required>
-        <button class="button green" type="submit">Sign In</button>
-      </form>
-      <form class="card profile-card" data-sign-up>
-        <h3>Create Account</h3>
-        <input class="field" name="email" type="email" placeholder="Email" required>
-        <input class="field" name="password" type="password" placeholder="Password" required>
-        <input class="field" name="handle" placeholder="Gamer handle" required>
-        <button class="button" type="submit">Sign Up</button>
-      </form>
+    <div class="auth-layout">
+      <section class="auth-panel">
+        <div class="auth-switch" role="tablist" aria-label="Account action">
+          <button class="${isSignup ? "active" : ""}" data-auth-mode="signup" type="button">Create Account</button>
+          <button class="${!isSignup ? "active" : ""}" data-auth-mode="signin" type="button">Sign In</button>
+        </div>
+        ${state.authMessage ? `<div class="notice small-notice">${escapeHtml(state.authMessage)}</div>` : ""}
+        ${isSignup ? renderSignUpForm() : renderSignInForm()}
+      </section>
+      <aside class="card auth-preview">
+        <span class="pill hot">Profile Stack</span>
+        <h3>What this unlocks</h3>
+        <p><strong>Public:</strong> handle, games, rank, platforms, play style, region, availability, and bio.</p>
+        <p><strong>Protected:</strong> Discord, Steam, Tracker Network, Riot, Xbox, PlayStation, Nintendo, or phone/contact details.</p>
+        <p><strong>Private:</strong> email and password stay with Supabase Auth.</p>
+      </aside>
     </div>
+  `;
+}
+
+function renderSignInForm() {
+  return `
+    <form class="profile-card auth-form" data-sign-in>
+      <h3>Welcome Back</h3>
+      <label>Email<input class="field" name="email" type="email" placeholder="you@example.com" autocomplete="email" required></label>
+      <label>Password<input class="field" name="password" type="password" placeholder="Your password" autocomplete="current-password" required></label>
+      <button class="button green wide" type="submit">Sign In</button>
+    </form>
+  `;
+}
+
+function renderSignUpForm() {
+  return `
+    <form class="profile-card auth-form" data-sign-up>
+      <h3>Create Your Account</h3>
+      <div class="form-grid">
+        <label>Email<input class="field" name="email" type="email" placeholder="you@example.com" autocomplete="email" required></label>
+        <label>Password<input class="field" name="password" type="password" placeholder="At least 6 characters" autocomplete="new-password" minlength="6" required></label>
+        <label>Gamer Handle<input class="field" name="handle" placeholder="NovaPulse" maxlength="18" required></label>
+        <label>Display Name<input class="field" name="display_name" placeholder="NovaPulse"></label>
+        <label>Age<input class="field" name="age" type="number" min="13" max="120" placeholder="21"></label>
+        <label>Region<input class="field" name="region" placeholder="Australia"></label>
+        <label>Main Game
+          <select class="field" name="main_game">
+            <option value="apex-legends">Apex Legends</option>
+            <option value="valorant">Valorant</option>
+            <option value="warzone">Call of Duty: Warzone</option>
+            <option value="fortnite">Fortnite</option>
+            <option value="minecraft">Minecraft</option>
+          </select>
+        </label>
+        <label>Platform
+          <select class="field" name="platform">
+            <option>PC</option>
+            <option>PlayStation</option>
+            <option>Xbox</option>
+            <option>Nintendo Switch</option>
+            <option>Mobile</option>
+          </select>
+        </label>
+        <label>Rank<input class="field" name="rank" placeholder="Diamond II"></label>
+        <label>Availability<input class="field" name="availability" placeholder="Evenings, 7PM - 11PM AEST"></label>
+      </div>
+      <label>Play Style
+        <select class="field" name="play_style">
+          <option>Good Comms</option>
+          <option>Competitive</option>
+          <option>Team Player</option>
+          <option>Casual</option>
+          <option>Coach / Mentor</option>
+        </select>
+      </label>
+      <label>Bio<textarea name="bio" placeholder="Tell players what you play, how you like to squad up, and what kind of teammates you want."></textarea></label>
+      <div class="protected-box">
+        <h4>Protected Handles</h4>
+        <p>These are stored as linked accounts and should only be shown after approved connections.</p>
+        <div class="form-grid">
+          <label>Discord<input class="field" name="discord" placeholder="NovaPulse#2042"></label>
+          <label>Tracker Network<input class="field" name="tracker_network" placeholder="apex/NovaPulse"></label>
+          <label>Steam<input class="field" name="steam" placeholder="novapulse"></label>
+          <label>Riot / Xbox / PSN<input class="field" name="other_handle" placeholder="Optional"></label>
+        </div>
+      </div>
+      <button class="button green wide" type="submit">Create Account</button>
+    </form>
   `;
 }
 
@@ -343,6 +439,16 @@ function renderSignedInProfile() {
 
 function bindPageEvents() {
   document.querySelector("[data-refresh]")?.addEventListener("click", loadData);
+  document.querySelector("[data-profile-tab]")?.addEventListener("click", () => {
+    state.tab = "profile";
+    state.authMode = "signup";
+    renderShell();
+  });
+  document.querySelectorAll("[data-auth-mode]").forEach(button => button.addEventListener("click", () => {
+    state.authMode = button.dataset.authMode;
+    state.authMessage = "";
+    renderShell();
+  }));
   document.querySelector("[data-sign-in]")?.addEventListener("submit", signIn);
   document.querySelector("[data-sign-up]")?.addEventListener("submit", signUp);
   document.querySelector("[data-sign-out]")?.addEventListener("click", signOut);
@@ -355,40 +461,59 @@ function bindPageEvents() {
 
 async function signIn(event) {
   event.preventDefault();
+  state.authMessage = "";
   const form = new FormData(event.currentTarget);
   const { error } = await state.supabase.auth.signInWithPassword({
     email: form.get("email"),
     password: form.get("password")
   });
-  if (error) return alert(error.message);
+  if (error) {
+    state.authMessage = error.message;
+    renderShell();
+    return;
+  }
   state.tab = "feed";
   await loadData();
 }
 
 async function signUp(event) {
   event.preventDefault();
+  state.authMessage = "";
   const form = new FormData(event.currentTarget);
+  const setup = profileSetupFromForm(form);
   const { data, error } = await state.supabase.auth.signUp({
     email: form.get("email"),
     password: form.get("password"),
-    options: { data: { handle: form.get("handle") } }
+    options: { data: setup }
   });
-  if (error) return alert(error.message);
-  if (data.session) {
-    await state.supabase.from("profiles").insert({
-      id: data.user.id,
-      handle: form.get("handle"),
-      display_name: form.get("handle"),
-      region: "Australia",
-      timezone: "AEST",
-      platforms: ["PC"],
-      top_games: ["apex-legends"],
-      rank: "Unranked",
-      play_style: ["Good Comms"],
-      bio: "New Gamer Connect player."
-    });
+  if (error) {
+    state.authMessage = error.message;
+    renderShell();
+    return;
   }
-  alert(data.session ? "Account created." : "Check your email to confirm your account, then sign in.");
+  if (data.session) {
+    state.session = data.session;
+    await state.supabase.from("profiles").upsert({
+      id: data.user.id,
+      handle: setup.handle,
+      display_name: setup.display_name,
+      age: setup.age,
+      region: setup.region,
+      timezone: setup.timezone,
+      platforms: setup.platforms,
+      top_games: setup.top_games,
+      rank: setup.rank,
+      play_style: setup.play_style,
+      availability: setup.availability,
+      bio: setup.bio
+    });
+    await savePrivateSetup(data.user.id, setup);
+    state.tab = "feed";
+    state.authMessage = "Account created. Welcome to Gamer Connect.";
+  } else {
+    state.authMode = "signin";
+    state.authMessage = "Check your email to confirm your account, then sign in.";
+  }
   await loadData();
 }
 
@@ -487,4 +612,65 @@ function escapeHtml(value) {
     '"': "&quot;",
     "'": "&#039;"
   }[char]));
+}
+
+function profileSetupFromForm(form) {
+  const handle = cleanHandle(form.get("handle"));
+  const displayName = String(form.get("display_name") || handle).trim() || handle;
+  return {
+    handle,
+    display_name: displayName,
+    age: numberOrNull(form.get("age")),
+    region: String(form.get("region") || "Australia").trim() || "Australia",
+    timezone: "AEST",
+    platforms: [String(form.get("platform") || "PC")],
+    top_games: [String(form.get("main_game") || "apex-legends")],
+    rank: String(form.get("rank") || "Unranked").trim() || "Unranked",
+    play_style: [String(form.get("play_style") || "Good Comms")],
+    availability: { summary: String(form.get("availability") || "").trim() },
+    bio: String(form.get("bio") || "New Gamer Connect player.").trim() || "New Gamer Connect player.",
+    protected_info: {
+      discord: String(form.get("discord") || "").trim(),
+      trackerNetwork: String(form.get("tracker_network") || "").trim(),
+      steam: String(form.get("steam") || "").trim(),
+      other: String(form.get("other_handle") || "").trim()
+    }
+  };
+}
+
+async function savePrivateSetup(profileId, setup) {
+  if (!profileId || !setup) return;
+  const protectedInfo = setup.protected_info || {};
+  await state.supabase.from("profile_private").upsert({
+    profile_id: profileId,
+    protected_info: protectedInfo,
+    info_stacks: [
+      { label: "Account", values: ["email", "supabase_auth"] },
+      { label: "Gaming", values: setup.top_games || [] },
+      { label: "Contact", values: Object.keys(protectedInfo).filter(key => protectedInfo[key]) }
+    ]
+  });
+  const linked = [
+    ["discord", protectedInfo.discord],
+    ["tracker_network", protectedInfo.trackerNetwork],
+    ["steam", protectedInfo.steam],
+    ["other", protectedInfo.other]
+  ].filter(([, accountHandle]) => accountHandle);
+  if (linked.length) {
+    await state.supabase.from("linked_accounts").upsert(linked.map(([provider, accountHandle]) => ({
+      profile_id: profileId,
+      provider,
+      account_handle: accountHandle,
+      is_private: true
+    })), { onConflict: "profile_id,provider" });
+  }
+}
+
+function cleanHandle(value) {
+  return String(value || "Player").replace(/[^a-z0-9_]/gi, "").slice(0, 18) || "Player";
+}
+
+function numberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
 }
