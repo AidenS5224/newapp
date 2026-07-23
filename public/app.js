@@ -451,6 +451,10 @@ function renderMessages() {
           ${outgoing.length ? `<p class="muted">${outgoing.length} sent request(s) waiting for approval.</p>` : ""}
         </div>
         <div class="card">
+          <h3>New Chat</h3>
+          ${accepted.length ? renderNewChatForm(accepted) : `<p>Add people first, then start direct or group chats here.</p>`}
+        </div>
+        <div class="card">
           <h3>Blocked Players</h3>
           ${blocked.length ? blocked.map(profile => `
             <div class="connection-row">
@@ -480,6 +484,25 @@ function renderIncomingConnection(connection) {
         <button class="button dark" data-connection-response="${connection.id}" data-status="rejected">Decline</button>
       </div>
     </div>
+  `;
+}
+
+function renderNewChatForm(acceptedConnectionsList) {
+  const people = acceptedConnectionsList.map(otherProfileForConnection).filter(Boolean);
+  return `
+    <form class="new-chat-form" data-new-chat-form>
+      <label>Chat Title<input class="field" name="title" placeholder="Optional group name"></label>
+      <div class="chat-picker">
+        ${people.map(profile => `
+          <label class="check-row">
+            <input type="checkbox" name="members" value="${escapeAttribute(profile.id)}">
+            <span>${escapeHtml(profile.handle)}</span>
+          </label>
+        `).join("")}
+      </div>
+      <label>First Message<input class="field" name="first_message" placeholder="Optional first message"></label>
+      <button class="button green" type="submit">Create Chat</button>
+    </form>
   `;
 }
 
@@ -796,6 +819,7 @@ function bindPageEvents() {
   document.querySelectorAll("[data-unfriend]").forEach(button => button.addEventListener("click", () => unfriendPlayer(button.dataset.unfriend)));
   document.querySelectorAll("[data-block]").forEach(button => button.addEventListener("click", () => blockPlayer(button.dataset.block)));
   document.querySelectorAll("[data-unblock]").forEach(button => button.addEventListener("click", () => unblockPlayer(button.dataset.unblock)));
+  document.querySelector("[data-new-chat-form]")?.addEventListener("submit", createChatFromForm);
   document.querySelectorAll("[data-send-message]").forEach(form => form.addEventListener("submit", sendMessage));
 }
 
@@ -1131,7 +1155,8 @@ async function startChat(profileId) {
     alert("You can message players after a connection is accepted.");
     return;
   }
-  await ensureDirectConversation(profileId);
+  const conversationId = await ensureChat([profileId]);
+  if (!conversationId) return;
   state.tab = "messages";
   await loadData();
 }
@@ -1148,21 +1173,13 @@ async function unfriendPlayer(profileId) {
 async function blockPlayer(profileId) {
   if (!state.profile) return alert("Sign in first.");
   if (!confirm("Block this player? They will be removed from your people and hidden from your discovery list.")) return;
-  const { error: deleteError } = await removeConnectionsWith(profileId);
-  if (deleteError) return alert(deleteError.message);
-  const { error } = await state.supabase.from("blocked_profiles").upsert({
-    blocker_profile_id: state.profile.id,
-    blocked_profile_id: profileId
-  }, { onConflict: "blocker_profile_id,blocked_profile_id" });
+  const { error } = await state.supabase.rpc("block_profile", { target_profile_id: profileId });
   if (error) return alert(error.message);
   await loadData();
 }
 
 async function removeConnectionsWith(profileId) {
-  return state.supabase
-    .from("connections")
-    .delete()
-    .or(`and(from_profile_id.eq.${state.profile.id},to_profile_id.eq.${profileId}),and(from_profile_id.eq.${profileId},to_profile_id.eq.${state.profile.id})`);
+  return state.supabase.rpc("remove_connection_with", { target_profile_id: profileId });
 }
 
 async function unblockPlayer(profileId) {
@@ -1190,30 +1207,45 @@ async function respondToConnection(connectionId, status) {
     .eq("id", connectionId);
   if (error) return alert(error.message);
   if (status === "accepted") {
-    await ensureDirectConversation(connection.from_profile_id);
+    await ensureChat([connection.from_profile_id]);
     state.tab = "messages";
   }
   await loadData();
 }
 
-async function ensureDirectConversation(profileId) {
-  const existing = directConversationWith(profileId);
-  if (existing) return existing;
-  const target = profileFor(profileId);
-  const conversation = {
-    id: crypto.randomUUID(),
-    title: target ? `${state.profile.handle} + ${target.handle}` : "Direct Chat",
-    conversation_type: "direct",
-    created_by_profile_id: state.profile.id
-  };
-  const { error } = await state.supabase.from("conversations").insert(conversation);
-  if (error) return alert(error.message);
-  const { error: participantError } = await state.supabase.from("conversation_participants").insert([
-    { conversation_id: conversation.id, profile_id: state.profile.id, role: "owner" },
-    { conversation_id: conversation.id, profile_id: profileId, role: "member" }
-  ]);
-  if (participantError) return alert(participantError.message);
-  return conversation;
+async function createChatFromForm(event) {
+  event.preventDefault();
+  if (!state.profile) return alert("Sign in first.");
+  const form = new FormData(event.currentTarget);
+  const members = form.getAll("members").map(String).filter(Boolean);
+  if (!members.length) return alert("Choose at least one player.");
+  const conversationId = await ensureChat(members, String(form.get("title") || ""), String(form.get("first_message") || ""));
+  if (!conversationId) return;
+  state.tab = "messages";
+  event.currentTarget.reset();
+  await loadData();
+}
+
+async function ensureChat(profileIds, title = "", firstMessage = "") {
+  const cleanIds = [...new Set(profileIds)].filter(profileId => profileId && !isBlocked(profileId));
+  if (!cleanIds.length) {
+    alert("Choose at least one unblocked player.");
+    return "";
+  }
+  if (cleanIds.length === 1) {
+    const existing = directConversationWith(cleanIds[0]);
+    if (existing) return existing.id;
+  }
+  const { data, error } = await state.supabase.rpc("create_chat", {
+    target_profile_ids: cleanIds,
+    chat_title: title,
+    first_message: firstMessage
+  });
+  if (error) {
+    alert(`${error.message}\n\nIf this mentions create_chat, run supabase/migrations/0007_relationship_chat_rpc.sql in Supabase SQL Editor.`);
+    return "";
+  }
+  return data || "";
 }
 
 async function sendMessage(event) {

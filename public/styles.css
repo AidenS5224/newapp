@@ -169,6 +169,24 @@ button { cursor: pointer; }
 .connection-row p {
   margin: 3px 0 0;
 }
+.new-chat-form {
+  display: grid;
+  gap: 10px;
+}
+.chat-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #08111f;
+}
 .feed-card .media {
   min-height: 220px;
   display: grid;
@@ -564,6 +582,7 @@ button { cursor: pointer; }
   .selected-game { grid-template-columns: auto minmax(0, 1fr); }
   .selected-game label { grid-column: 1 / -1; }
   .game-fields { grid-template-columns: 1fr; }
+  .chat-picker { grid-template-columns: 1fr; }
   .editor-head { flex-direction: column; }
   .auth-layout, .auth-hero { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
