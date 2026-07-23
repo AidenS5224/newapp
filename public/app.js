@@ -53,6 +53,7 @@ async function initSupabase() {
     state.ready = true;
   } catch (error) {
     console.warn(error);
+    state.config = { ready: false, error: "Could not load Supabase config from Vercel." };
   }
 }
 
@@ -209,7 +210,7 @@ function renderConfigMissing() {
   return page("Setup Needed", "Vercel is live, but Supabase public config is not available yet.", `
     <div class="card notice">
       <h3>Check Vercel Environment Variables</h3>
-      <p>Add <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code>, then redeploy.</p>
+      <p>${escapeHtml(state.config?.error || "Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY, then redeploy.")}</p>
     </div>
   `);
 }
@@ -415,6 +416,11 @@ function bindPageEvents() {
 async function signIn(event) {
   event.preventDefault();
   state.authMessage = "";
+  if (!state.ready) {
+    state.authMessage = state.config?.error || "Supabase is not configured yet.";
+    renderShell();
+    return;
+  }
   const form = new FormData(event.currentTarget);
   const { error } = await state.supabase.auth.signInWithPassword({
     email: form.get("email"),
@@ -432,6 +438,11 @@ async function signIn(event) {
 async function signUp(event) {
   event.preventDefault();
   state.authMessage = "";
+  if (!state.ready) {
+    state.authMessage = state.config?.error || "Supabase is not configured yet.";
+    renderShell();
+    return;
+  }
   const form = new FormData(event.currentTarget);
   const setup = profileSetupFromForm(form);
   const { data, error } = await state.supabase.auth.signUp({
