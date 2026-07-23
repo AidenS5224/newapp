@@ -82,6 +82,7 @@ const state = {
   lfg: [],
   squads: [],
   connections: [],
+  blocks: [],
   conversations: [],
   privateProfile: null,
   linkedAccounts: [],
@@ -140,11 +141,12 @@ async function loadData() {
   state.lfg = lfg || [];
   state.squads = squads || [];
   if (state.session) {
-    state.connections = await loadConnections();
+    [state.connections, state.blocks] = await Promise.all([loadConnections(), loadBlocks()]);
     state.conversations = await loadConversations();
     await loadPrivateProfile();
   } else {
     state.connections = [];
+    state.blocks = [];
     state.conversations = [];
     state.privateProfile = null;
     state.linkedAccounts = [];
@@ -212,6 +214,18 @@ async function loadConversations() {
 async function loadConnections() {
   const { data, error } = await state.supabase
     .from("connections")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.warn(error.message);
+    return [];
+  }
+  return data || [];
+}
+
+async function loadBlocks() {
+  const { data, error } = await state.supabase
+    .from("blocked_profiles")
     .select("*")
     .order("created_at", { ascending: false });
   if (error) {
@@ -363,7 +377,7 @@ function renderFeedPost(post) {
 }
 
 function renderDiscovery() {
-  const players = state.profiles.filter(profile => profile.id !== state.profile?.id);
+  const players = state.profiles.filter(profile => profile.id !== state.profile?.id && !isBlocked(profile.id));
   return page("Discovery/LFG", "Find players and parties already forming.", `
     <div class="grid two">
       <div>
@@ -396,14 +410,20 @@ function renderPlayerCard(profile) {
 
 function renderConnectionActions(profile, connection) {
   if (!state.profile) return `<button class="button dark" data-profile-tab>Sign In</button>`;
+  if (isBlocked(profile.id)) return `<button class="button dark" data-unblock="${profile.id}">Unblock</button>`;
   if (!connection) return `<button class="button green" data-connect="${profile.id}">Add Player</button>`;
   if (connection.status === "accepted") {
-    return `<button class="button green" data-new-chat="${profile.id}">Message</button>`;
+    return `
+      <button class="button green" data-new-chat="${profile.id}">Message</button>
+      <button class="button dark" data-unfriend="${profile.id}">Unfriend</button>
+      <button class="button red" data-block="${profile.id}">Block</button>
+    `;
   }
   if (connection.status === "pending" && connection.to_profile_id === state.profile.id) {
     return `
       <button class="button green" data-connection-response="${connection.id}" data-status="accepted">Accept</button>
       <button class="button dark" data-connection-response="${connection.id}" data-status="rejected">Decline</button>
+      <button class="button red" data-block="${profile.id}">Block</button>
     `;
   }
   if (connection.status === "pending") return `<button class="button dark" disabled>Request Sent</button>`;
@@ -417,6 +437,7 @@ function renderMessages() {
   const incoming = pendingIncomingConnections();
   const outgoing = pendingOutgoingConnections();
   const accepted = acceptedConnections();
+  const blocked = blockedProfiles();
   return page("Messages", "Matched players, direct chats, and group conversations.", `
     ${state.session ? `
       <div class="grid two">
@@ -429,10 +450,19 @@ function renderMessages() {
           ${accepted.length ? accepted.map(renderAcceptedConnection).join("") : `<p>Accepted players will show here.</p>`}
           ${outgoing.length ? `<p class="muted">${outgoing.length} sent request(s) waiting for approval.</p>` : ""}
         </div>
+        <div class="card">
+          <h3>Blocked Players</h3>
+          ${blocked.length ? blocked.map(profile => `
+            <div class="connection-row">
+              <div><strong>${escapeHtml(profile.handle)}</strong><p>Hidden from discovery and messages.</p></div>
+              <button class="button dark" data-unblock="${profile.id}">Unblock</button>
+            </div>
+          `).join("") : `<p>No blocked players.</p>`}
+        </div>
       </div>
     ` : `<div class="card notice"><h3>Sign in required</h3><p>Messages need a Supabase account.</p></div>`}
     <div class="grid">
-      ${state.conversations.length ? state.conversations.map(renderConversation).join("") : `<div class="empty">No conversations yet.</div>`}
+      ${visibleConversations().length ? visibleConversations().map(renderConversation).join("") : `<div class="empty">No conversations yet.</div>`}
     </div>
   `);
 }
@@ -463,6 +493,8 @@ function renderAcceptedConnection(connection) {
         <p>${escapeHtml(other.region || "Unknown region")} - ${escapeHtml(connection.status)}</p>
       </div>
       <button class="button green" data-new-chat="${other.id}">Message</button>
+      <button class="button dark" data-unfriend="${other.id}">Unfriend</button>
+      <button class="button red" data-block="${other.id}">Block</button>
     </div>
   `;
 }
@@ -761,6 +793,9 @@ function bindPageEvents() {
   document.querySelectorAll("[data-connect]").forEach(button => button.addEventListener("click", () => connectToPlayer(button.dataset.connect)));
   document.querySelectorAll("[data-connection-response]").forEach(button => button.addEventListener("click", () => respondToConnection(button.dataset.connectionResponse, button.dataset.status)));
   document.querySelectorAll("[data-new-chat]").forEach(button => button.addEventListener("click", () => startChat(button.dataset.newChat)));
+  document.querySelectorAll("[data-unfriend]").forEach(button => button.addEventListener("click", () => unfriendPlayer(button.dataset.unfriend)));
+  document.querySelectorAll("[data-block]").forEach(button => button.addEventListener("click", () => blockPlayer(button.dataset.block)));
+  document.querySelectorAll("[data-unblock]").forEach(button => button.addEventListener("click", () => unblockPlayer(button.dataset.unblock)));
   document.querySelectorAll("[data-send-message]").forEach(form => form.addEventListener("submit", sendMessage));
 }
 
@@ -1068,6 +1103,7 @@ async function likePost(postId) {
 
 async function connectToPlayer(profileId) {
   if (!state.profile) return alert("Sign in first.");
+  if (isBlocked(profileId)) return alert("Unblock this player before adding them again.");
   const existing = connectionWith(profileId);
   if (existing?.status === "accepted") {
     await startChat(profileId);
@@ -1089,6 +1125,7 @@ async function connectToPlayer(profileId) {
 
 async function startChat(profileId) {
   if (!state.profile) return alert("Sign in first.");
+  if (isBlocked(profileId)) return alert("Unblock this player before messaging them.");
   const connection = connectionWith(profileId);
   if (!connection || connection.status !== "accepted") {
     alert("You can message players after a connection is accepted.");
@@ -1096,6 +1133,46 @@ async function startChat(profileId) {
   }
   await ensureDirectConversation(profileId);
   state.tab = "messages";
+  await loadData();
+}
+
+async function unfriendPlayer(profileId) {
+  if (!state.profile) return alert("Sign in first.");
+  const connection = connectionWith(profileId);
+  if (!connection) return;
+  const { error } = await removeConnectionsWith(profileId);
+  if (error) return alert(error.message);
+  await loadData();
+}
+
+async function blockPlayer(profileId) {
+  if (!state.profile) return alert("Sign in first.");
+  if (!confirm("Block this player? They will be removed from your people and hidden from your discovery list.")) return;
+  const { error: deleteError } = await removeConnectionsWith(profileId);
+  if (deleteError) return alert(deleteError.message);
+  const { error } = await state.supabase.from("blocked_profiles").upsert({
+    blocker_profile_id: state.profile.id,
+    blocked_profile_id: profileId
+  }, { onConflict: "blocker_profile_id,blocked_profile_id" });
+  if (error) return alert(error.message);
+  await loadData();
+}
+
+async function removeConnectionsWith(profileId) {
+  return state.supabase
+    .from("connections")
+    .delete()
+    .or(`and(from_profile_id.eq.${state.profile.id},to_profile_id.eq.${profileId}),and(from_profile_id.eq.${profileId},to_profile_id.eq.${state.profile.id})`);
+}
+
+async function unblockPlayer(profileId) {
+  if (!state.profile) return alert("Sign in first.");
+  const { error } = await state.supabase
+    .from("blocked_profiles")
+    .delete()
+    .eq("blocker_profile_id", state.profile.id)
+    .eq("blocked_profile_id", profileId);
+  if (error) return alert(error.message);
   await loadData();
 }
 
@@ -1145,6 +1222,10 @@ async function sendMessage(event) {
   const form = new FormData(event.currentTarget);
   const body = form.get("body");
   const conversationId = event.currentTarget.dataset.sendMessage;
+  if (isConversationBlocked(conversationId)) {
+    alert("Unblock this player before sending messages.");
+    return;
+  }
   const { error } = await state.supabase.from("messages").insert({
     conversation_id: conversationId,
     sender_profile_id: state.profile.id,
@@ -1197,10 +1278,35 @@ function acceptedConnections() {
   });
 }
 
+function visibleConversations() {
+  return state.conversations.filter(conversation => !isConversationBlocked(conversation.id));
+}
+
 function otherProfileForConnection(connection) {
   if (!state.profile) return null;
   const otherId = connection.from_profile_id === state.profile.id ? connection.to_profile_id : connection.from_profile_id;
   return profileFor(otherId);
+}
+
+function blockedProfiles() {
+  return state.blocks.map(block => profileFor(block.blocked_profile_id)).filter(Boolean);
+}
+
+function isBlocked(profileId) {
+  return state.blocks.some(block => block.blocked_profile_id === profileId);
+}
+
+function isConversationBlocked(conversationId) {
+  const conversation = state.conversations.find(item => item.id === conversationId);
+  if (!conversation || conversation.conversation_type !== "direct") return false;
+  const otherId = conversationOtherProfileId(conversation);
+  return otherId ? isBlocked(otherId) : false;
+}
+
+function conversationOtherProfileId(conversation) {
+  if (!state.profile) return "";
+  const participant = (conversation.conversation_participants || []).find(item => item.profile_id !== state.profile.id);
+  return participant?.profile_id || "";
 }
 
 function directConversationWith(profileId) {
