@@ -179,12 +179,12 @@ function renderMain() {
 }
 
 function renderAuthGate() {
-  return page("Create Your Gamer Connect Account", "Set up your profile before jumping into feed, LFG, messages, and servers.", `
+  return page("Create Your Gamer Connect Account", "Start with a secure account. Your gamer profile can be set up next.", `
     <div class="auth-hero">
       <div>
-        <span class="pill hot">Protected profile setup</span>
-        <h3>Find better teammates from day one.</h3>
-        <p>Your public profile helps players match with your game, region, play style, rank, and availability. Discord, Tracker Network, Steam, and other handles stay protected until you approve a connection.</p>
+        <span class="pill hot">Account setup</span>
+        <h3>Sign in or create your account.</h3>
+        <p>This first step only creates the secure login. Main game, rank, availability, play style, bio, platform handles, and display name will move into a separate profile setup menu.</p>
       </div>
       <button class="button green" data-profile-tab>Create Account</button>
     </div>
@@ -330,7 +330,7 @@ function renderEventsServers() {
 }
 
 function renderProfile() {
-  return page("Profile", "Account, sign in, and protected profile setup.", `
+  return page("Profile", "Sign in or create your secure Gamer Connect account.", `
     ${state.session ? renderSignedInProfile() : renderAuthForms()}
   `);
 }
@@ -348,11 +348,10 @@ function renderAuthForms() {
         ${isSignup ? renderSignUpForm() : renderSignInForm()}
       </section>
       <aside class="card auth-preview">
-        <span class="pill hot">Profile Stack</span>
-        <h3>What this unlocks</h3>
-        <p><strong>Public:</strong> handle, games, rank, platforms, play style, region, availability, and bio.</p>
-        <p><strong>Protected:</strong> Discord, Steam, Tracker Network, Riot, Xbox, PlayStation, Nintendo, or phone/contact details.</p>
-        <p><strong>Private:</strong> email and password stay with Supabase Auth.</p>
+        <span class="pill hot">Step 1</span>
+        <h3>Account First</h3>
+        <p><strong>Now:</strong> create a secure login with Supabase Auth.</p>
+        <p><strong>Next:</strong> build a separate gamer profile setup menu for display name, games, rank, availability, play style, bio, and connected accounts.</p>
       </aside>
     </div>
   `;
@@ -373,54 +372,8 @@ function renderSignUpForm() {
   return `
     <form class="profile-card auth-form" data-sign-up>
       <h3>Create Your Account</h3>
-      <div class="form-grid">
-        <label>Email<input class="field" name="email" type="email" placeholder="you@example.com" autocomplete="email" required></label>
-        <label>Password<input class="field" name="password" type="password" placeholder="At least 6 characters" autocomplete="new-password" minlength="6" required></label>
-        <label>Gamer Handle<input class="field" name="handle" placeholder="NovaPulse" maxlength="18" required></label>
-        <label>Display Name<input class="field" name="display_name" placeholder="NovaPulse"></label>
-        <label>Age<input class="field" name="age" type="number" min="13" max="120" placeholder="21"></label>
-        <label>Region<input class="field" name="region" placeholder="Australia"></label>
-        <label>Main Game
-          <select class="field" name="main_game">
-            <option value="apex-legends">Apex Legends</option>
-            <option value="valorant">Valorant</option>
-            <option value="warzone">Call of Duty: Warzone</option>
-            <option value="fortnite">Fortnite</option>
-            <option value="minecraft">Minecraft</option>
-          </select>
-        </label>
-        <label>Platform
-          <select class="field" name="platform">
-            <option>PC</option>
-            <option>PlayStation</option>
-            <option>Xbox</option>
-            <option>Nintendo Switch</option>
-            <option>Mobile</option>
-          </select>
-        </label>
-        <label>Rank<input class="field" name="rank" placeholder="Diamond II"></label>
-        <label>Availability<input class="field" name="availability" placeholder="Evenings, 7PM - 11PM AEST"></label>
-      </div>
-      <label>Play Style
-        <select class="field" name="play_style">
-          <option>Good Comms</option>
-          <option>Competitive</option>
-          <option>Team Player</option>
-          <option>Casual</option>
-          <option>Coach / Mentor</option>
-        </select>
-      </label>
-      <label>Bio<textarea name="bio" placeholder="Tell players what you play, how you like to squad up, and what kind of teammates you want."></textarea></label>
-      <div class="protected-box">
-        <h4>Protected Handles</h4>
-        <p>These are stored as linked accounts and should only be shown after approved connections.</p>
-        <div class="form-grid">
-          <label>Discord<input class="field" name="discord" placeholder="NovaPulse#2042"></label>
-          <label>Tracker Network<input class="field" name="tracker_network" placeholder="apex/NovaPulse"></label>
-          <label>Steam<input class="field" name="steam" placeholder="novapulse"></label>
-          <label>Riot / Xbox / PSN<input class="field" name="other_handle" placeholder="Optional"></label>
-        </div>
-      </div>
+      <label>Email<input class="field" name="email" type="email" placeholder="you@example.com" autocomplete="email" required></label>
+      <label>Password<input class="field" name="password" type="password" placeholder="At least 6 characters" autocomplete="new-password" minlength="6" required></label>
       <button class="button green wide" type="submit">Create Account</button>
     </form>
   `;
@@ -497,7 +450,6 @@ async function signUp(event) {
       id: data.user.id,
       handle: setup.handle,
       display_name: setup.display_name,
-      age: setup.age,
       region: setup.region,
       timezone: setup.timezone,
       platforms: setup.platforms,
@@ -507,7 +459,6 @@ async function signUp(event) {
       availability: setup.availability,
       bio: setup.bio
     });
-    await savePrivateSetup(data.user.id, setup);
     state.tab = "feed";
     state.authMessage = "Account created. Welcome to Gamer Connect.";
   } else {
@@ -615,26 +566,18 @@ function escapeHtml(value) {
 }
 
 function profileSetupFromForm(form) {
-  const handle = cleanHandle(form.get("handle"));
-  const displayName = String(form.get("display_name") || handle).trim() || handle;
+  const handle = cleanHandle(String(form.get("email") || "Player").split("@")[0]);
   return {
     handle,
-    display_name: displayName,
-    age: numberOrNull(form.get("age")),
-    region: String(form.get("region") || "Australia").trim() || "Australia",
+    display_name: handle,
+    region: "Australia",
     timezone: "AEST",
-    platforms: [String(form.get("platform") || "PC")],
-    top_games: [String(form.get("main_game") || "apex-legends")],
-    rank: String(form.get("rank") || "Unranked").trim() || "Unranked",
-    play_style: [String(form.get("play_style") || "Good Comms")],
-    availability: { summary: String(form.get("availability") || "").trim() },
-    bio: String(form.get("bio") || "New Gamer Connect player.").trim() || "New Gamer Connect player.",
-    protected_info: {
-      discord: String(form.get("discord") || "").trim(),
-      trackerNetwork: String(form.get("tracker_network") || "").trim(),
-      steam: String(form.get("steam") || "").trim(),
-      other: String(form.get("other_handle") || "").trim()
-    }
+    platforms: [],
+    top_games: [],
+    rank: "Unranked",
+    play_style: [],
+    availability: {},
+    bio: ""
   };
 }
 

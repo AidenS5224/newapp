@@ -172,17 +172,6 @@ button { cursor: pointer; }
   background: #08111f;
 }
 .composer textarea { min-height: 90px; resize: vertical; }
-.auth-form textarea {
-  width: 100%;
-  min-height: 96px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin: 6px 0;
-  color: var(--text);
-  background: #08111f;
-  resize: vertical;
-}
 .profile-card {
   display: grid;
   gap: 8px;
@@ -231,19 +220,6 @@ button { cursor: pointer; }
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px 12px;
-}
-.protected-box {
-  border: 1px solid rgba(52, 211, 115, .25);
-  border-radius: 8px;
-  padding: 12px;
-  background: rgba(52, 211, 115, .06);
-}
-.protected-box h4 {
-  margin: 0 0 4px;
-}
-.protected-box p {
-  margin: 0 0 10px;
-  color: var(--muted);
 }
 .auth-preview {
   position: sticky;
