@@ -11,6 +11,7 @@ Create a Supabase project, then run the migration in:
 
 ```text
 supabase/migrations/0001_gamer_connect.sql
+supabase/migrations/0002_conversation_policy_helpers.sql
 ```
 
 Supabase should own production auth, public profiles, protected linked accounts, feed posts, comments, reactions, conversations, and messages.
@@ -21,11 +22,14 @@ Vercel is prepared as the web/PC host with:
 
 ```text
 vercel.json
+api/config.js
 public/index.html
+public/app.js
+public/styles.css
 .env.example
 ```
 
-When the web app is added, set these Vercel environment variables:
+Set these Vercel environment variables:
 
 ```text
 NEXT_PUBLIC_SUPABASE_URL
@@ -34,6 +38,8 @@ SUPABASE_SERVICE_ROLE_KEY
 ```
 
 Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. Never expose it in Android, iOS, or browser code.
+
+The current Vercel web client reads only the public URL and publishable key through `/api/config`. It does not send the service role key to the browser.
 
 ## Recommended Split
 

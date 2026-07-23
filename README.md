@@ -5,7 +5,7 @@ First working build path for the Gamer Connect product:
 - `backend/`: Raspberry Pi-friendly API server using Python standard library + SQLite.
 - `android/`: native Android test client scaffold that can call the backend over Wi-Fi.
 - `supabase/`: hosted Postgres/Auth schema for the production path.
-- `public/` + `vercel.json`: starter Vercel web/PC deployment scaffold.
+- `public/` + `api/` + `vercel.json`: Vercel web/PC client wired for Supabase.
 
 ## Current Backend Features
 
@@ -167,13 +167,17 @@ Hosted project files are included:
 
 ```text
 supabase/migrations/0001_gamer_connect.sql
+supabase/migrations/0002_conversation_policy_helpers.sql
 vercel.json
+api/config.js
 public/index.html
+public/app.js
+public/styles.css
 .env.example
 docs/SUPABASE_VERCEL.md
 ```
 
-Use the local Python backend for Raspberry Pi testing. Use Supabase + Vercel when you are ready to host auth, feed, messaging, and the web/PC client.
+Use the local Python backend for Raspberry Pi testing. Use Supabase + Vercel for the hosted web/PC client with auth, feed, discovery, messages, events/servers, and profile.
 
 ## Backend Control Terminal
 
