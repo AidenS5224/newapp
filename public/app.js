@@ -10,6 +10,8 @@ const state = {
   tab: "profile",
   authMode: "signup",
   authMessage: "",
+  profileEdit: false,
+  profileMessage: "",
   ready: false,
   config: null,
   supabase: null,
@@ -21,6 +23,8 @@ const state = {
   lfg: [],
   squads: [],
   conversations: [],
+  privateProfile: null,
+  linkedAccounts: [],
   messages: {}
 };
 
@@ -64,7 +68,7 @@ async function loadData() {
   }
   await ensureProfile();
   const [profiles, games, feed, lfg, squads] = await Promise.all([
-    read("profiles", "id, handle, display_name, rank, region, platforms, top_games, play_style, bio, avatar_url, online, created_at"),
+    read("profiles", "id, handle, display_name, age, region, timezone, platforms, top_games, rank, play_style, availability, bio, avatar_url, online, created_at"),
     read("games", "*"),
     read("feed_posts", "*", { order: "created_at" }),
     read("lfg_posts", "*", { order: "created_at" }),
@@ -77,6 +81,7 @@ async function loadData() {
   state.squads = squads || [];
   if (state.session) {
     state.conversations = await loadConversations();
+    await loadPrivateProfile();
   }
   renderShell();
 }
@@ -136,6 +141,20 @@ async function loadConversations() {
     return [];
   }
   return data || [];
+}
+
+async function loadPrivateProfile() {
+  if (!state.profile) {
+    state.privateProfile = null;
+    state.linkedAccounts = [];
+    return;
+  }
+  const [{ data: privateProfile }, { data: linkedAccounts }] = await Promise.all([
+    state.supabase.from("profile_private").select("*").eq("profile_id", state.profile.id).maybeSingle(),
+    state.supabase.from("linked_accounts").select("*").eq("profile_id", state.profile.id)
+  ]);
+  state.privateProfile = privateProfile || null;
+  state.linkedAccounts = linkedAccounts || [];
 }
 
 function renderShell() {
@@ -331,9 +350,10 @@ function renderEventsServers() {
 }
 
 function renderProfile() {
-  return page("Profile", "Sign in or create your secure Gamer Connect account.", `
-    ${state.session ? renderSignedInProfile() : renderAuthForms()}
-  `);
+  if (!state.session) {
+    return page("Profile", "Sign in or create your secure Gamer Connect account.", renderAuthForms());
+  }
+  return page("Profile", "This is how other players will see you.", renderSignedInProfile());
 }
 
 function renderAuthForms() {
@@ -381,13 +401,122 @@ function renderSignUpForm() {
 }
 
 function renderSignedInProfile() {
+  if (state.profileEdit) return renderProfileEditor();
+  const profile = state.profile || {};
+  const games = list(profile.top_games).map(gameLabel).filter(Boolean);
+  const platforms = list(profile.platforms);
+  const styles = list(profile.play_style);
+  const availability = availabilityLabel(profile.availability);
+  const stats = profile.stats || {};
   return `
-    <div class="card profile-card">
-      <h3>${escapeHtml(state.profile?.handle || state.session.user.email)}</h3>
-      <p>${escapeHtml(state.profile?.bio || "Update your profile soon.")}</p>
-      <span class="pill hot">${escapeHtml(state.profile?.rank || "Unranked")}</span>
+    <section class="profile-page">
+      <div class="profile-hero-card">
+        <button class="button dark profile-edit-button" data-edit-profile>Edit</button>
+        <div class="profile-banner"></div>
+        <div class="profile-head">
+          <div class="profile-avatar">${escapeHtml(initials(profile.display_name || profile.handle || state.session.user.email))}</div>
+          <div>
+            <h3>${escapeHtml(profile.display_name || profile.handle || "Player")}</h3>
+            <p>@${escapeHtml(profile.handle || "player")} ${profile.online ? "- Online" : "- Offline"}</p>
+          </div>
+        </div>
+        <p class="profile-bio">${escapeHtml(profile.bio || "No bio yet. Add a short intro so squads know what kind of teammate you are.")}</p>
+        <div class="profile-meta">
+          <span>${escapeHtml(profile.rank || "Unranked")}</span>
+          <span>${escapeHtml(profile.region || "Unknown region")}</span>
+          <span>${escapeHtml(profile.timezone || "Timezone not set")}</span>
+        </div>
+        <div class="profile-actions">
+          <button class="button green">Connect</button>
+          <button class="button dark">Message</button>
+          <button class="button dark">Invite</button>
+        </div>
+      </div>
+      <div class="profile-grid">
+        <div class="card">
+          <h3>Top Games</h3>
+          ${games.length ? games.map(value => `<span class="pill hot">${escapeHtml(value)}</span>`).join("") : `<p>No games set yet.</p>`}
+        </div>
+        <div class="card">
+          <h3>Platforms</h3>
+          ${platforms.length ? platforms.map(value => `<span class="pill">${escapeHtml(value)}</span>`).join("") : `<p>No platforms set yet.</p>`}
+        </div>
+        <div class="card">
+          <h3>Play Style</h3>
+          ${styles.length ? styles.map(value => `<span class="pill">${escapeHtml(value)}</span>`).join("") : `<p>No play style set yet.</p>`}
+        </div>
+        <div class="card">
+          <h3>Availability</h3>
+          <p>${escapeHtml(availability || "No availability set yet.")}</p>
+        </div>
+        <div class="card">
+          <h3>Stats Snapshot</h3>
+          <div class="stat-row">
+            <div><strong>${escapeHtml(stats.winRate || "0%")}</strong><span>Win Rate</span></div>
+            <div><strong>${escapeHtml(stats.kd || "0.00")}</strong><span>K/D</span></div>
+            <div><strong>${escapeHtml(stats.games || "0")}</strong><span>Games</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Connected Accounts</h3>
+          ${state.linkedAccounts.length ? state.linkedAccounts.map(account => `<span class="pill">${escapeHtml(providerLabel(account.provider))}</span>`).join("") : `<p>No connected accounts yet.</p>`}
+          <p class="muted">Handles are protected and only unlock after approved connections.</p>
+        </div>
+      </div>
       <button class="button red" data-sign-out>Sign Out</button>
-    </div>
+    </section>
+  `;
+}
+
+function renderProfileEditor() {
+  const profile = state.profile || {};
+  const protectedInfo = protectedInfoMap();
+  return `
+    <form class="profile-editor" data-save-profile>
+      <div class="editor-head">
+        <div>
+          <h3>Edit Profile</h3>
+          <p>Update the public profile players see and the protected account handles they can unlock later.</p>
+        </div>
+        <div class="btn-row">
+          <button class="button dark" type="button" data-cancel-profile-edit>Cancel</button>
+          <button class="button green" type="submit">Save Profile</button>
+        </div>
+      </div>
+      ${state.profileMessage ? `<div class="success small-notice">${escapeHtml(state.profileMessage)}</div>` : ""}
+      <div class="grid two">
+        <section class="card profile-card">
+          <h3>Public Info</h3>
+          <label>Display Name<input class="field" name="display_name" value="${escapeAttribute(profile.display_name || "")}" placeholder="NovaPulse"></label>
+          <label>Gamer Handle<input class="field" name="handle" value="${escapeAttribute(profile.handle || "")}" placeholder="novapulse" required></label>
+          <label>Age<input class="field" name="age" type="number" min="13" max="120" value="${escapeAttribute(profile.age || "")}" placeholder="21"></label>
+          <label>Region<input class="field" name="region" value="${escapeAttribute(profile.region || "")}" placeholder="Australia"></label>
+          <label>Timezone<input class="field" name="timezone" value="${escapeAttribute(profile.timezone || "")}" placeholder="AEST"></label>
+          <label>Rank<input class="field" name="rank" value="${escapeAttribute(profile.rank || "")}" placeholder="Diamond II"></label>
+          <label>Bio<textarea name="bio" placeholder="Tell players what kind of squad you are looking for.">${escapeHtml(profile.bio || "")}</textarea></label>
+        </section>
+        <section class="card profile-card">
+          <h3>Gaming Stack</h3>
+          <label>Top Games<input class="field" name="top_games" value="${escapeAttribute(list(profile.top_games).join(", "))}" placeholder="Apex Legends, Valorant"></label>
+          <label>Platforms<input class="field" name="platforms" value="${escapeAttribute(list(profile.platforms).join(", "))}" placeholder="PC, PlayStation, Xbox"></label>
+          <label>Play Style<input class="field" name="play_style" value="${escapeAttribute(list(profile.play_style).join(", "))}" placeholder="Competitive, Good Comms, Team Player"></label>
+          <label>Availability<input class="field" name="availability" value="${escapeAttribute(availabilityLabel(profile.availability))}" placeholder="Evenings, 7PM - 11PM AEST"></label>
+          <label>Avatar URL<input class="field" name="avatar_url" value="${escapeAttribute(profile.avatar_url || "")}" placeholder="https://..."></label>
+        </section>
+        <section class="card profile-card">
+          <h3>Protected Handles</h3>
+          <label>Discord<input class="field" name="discord" value="${escapeAttribute(protectedInfo.discord || "")}" placeholder="NovaPulse#2042"></label>
+          <label>Tracker Network<input class="field" name="tracker_network" value="${escapeAttribute(protectedInfo.tracker_network || "")}" placeholder="apex/NovaPulse"></label>
+          <label>Steam<input class="field" name="steam" value="${escapeAttribute(protectedInfo.steam || "")}" placeholder="novapulse"></label>
+          <label>Riot / Xbox / PSN<input class="field" name="other" value="${escapeAttribute(protectedInfo.other || "")}" placeholder="Optional"></label>
+        </section>
+        <section class="card profile-card">
+          <h3>Profile Preview</h3>
+          <p>This page is laid out like another player viewing your profile. The edit button only appears for you.</p>
+          <p class="muted">Protected handles are stored separately from public profile details.</p>
+        </section>
+      </div>
+    </form>
   `;
 }
 
@@ -406,6 +535,17 @@ function bindPageEvents() {
   document.querySelector("[data-sign-in]")?.addEventListener("submit", signIn);
   document.querySelector("[data-sign-up]")?.addEventListener("submit", signUp);
   document.querySelector("[data-sign-out]")?.addEventListener("click", signOut);
+  document.querySelector("[data-edit-profile]")?.addEventListener("click", () => {
+    state.profileEdit = true;
+    state.profileMessage = "";
+    renderShell();
+  });
+  document.querySelector("[data-cancel-profile-edit]")?.addEventListener("click", () => {
+    state.profileEdit = false;
+    state.profileMessage = "";
+    renderShell();
+  });
+  document.querySelector("[data-save-profile]")?.addEventListener("submit", saveProfile);
   document.querySelector("[data-create-post]")?.addEventListener("submit", createPost);
   document.querySelectorAll("[data-like]").forEach(button => button.addEventListener("click", () => likePost(button.dataset.like)));
   document.querySelectorAll("[data-connect]").forEach(button => button.addEventListener("click", () => connectToPlayer(button.dataset.connect)));
@@ -483,6 +623,62 @@ async function signOut() {
   await state.supabase.auth.signOut();
   state.session = null;
   state.profile = null;
+  state.profileEdit = false;
+  await loadData();
+}
+
+async function saveProfile(event) {
+  event.preventDefault();
+  if (!state.profile) return alert("Sign in first.");
+  const form = new FormData(event.currentTarget);
+  const handle = cleanHandle(form.get("handle"));
+  const profile = {
+    id: state.profile.id,
+    display_name: String(form.get("display_name") || handle).trim() || handle,
+    handle,
+    age: numberOrNull(form.get("age")),
+    region: String(form.get("region") || "Australia").trim() || "Australia",
+    timezone: String(form.get("timezone") || "AEST").trim() || "AEST",
+    rank: String(form.get("rank") || "Unranked").trim() || "Unranked",
+    bio: String(form.get("bio") || "").trim(),
+    top_games: splitList(form.get("top_games")),
+    platforms: splitList(form.get("platforms")),
+    play_style: splitList(form.get("play_style")),
+    availability: { summary: String(form.get("availability") || "").trim() },
+    avatar_url: String(form.get("avatar_url") || "").trim() || null
+  };
+  const { data, error } = await state.supabase.from("profiles").upsert(profile).select("*").single();
+  if (error) return alert(error.message);
+
+  const protectedInfo = {
+    discord: String(form.get("discord") || "").trim(),
+    tracker_network: String(form.get("tracker_network") || "").trim(),
+    steam: String(form.get("steam") || "").trim(),
+    other: String(form.get("other") || "").trim()
+  };
+  await state.supabase.from("profile_private").upsert({
+    profile_id: state.profile.id,
+    protected_info: protectedInfo,
+    info_stacks: [
+      { label: "Gaming", values: profile.top_games },
+      { label: "Platforms", values: profile.platforms },
+      { label: "Protected", values: Object.keys(protectedInfo).filter(key => protectedInfo[key]) }
+    ]
+  });
+  const linked = Object.entries(protectedInfo)
+    .filter(([, accountHandle]) => accountHandle)
+    .map(([provider, accountHandle]) => ({
+      profile_id: state.profile.id,
+      provider,
+      account_handle: accountHandle,
+      is_private: true
+    }));
+  if (linked.length) {
+    await state.supabase.from("linked_accounts").upsert(linked, { onConflict: "profile_id,provider" });
+  }
+  state.profile = data;
+  state.profileEdit = false;
+  state.profileMessage = "Profile saved.";
   await loadData();
 }
 
@@ -576,6 +772,10 @@ function escapeHtml(value) {
   }[char]));
 }
 
+function escapeAttribute(value) {
+  return escapeHtml(value).replace(/`/g, "&#096;");
+}
+
 function profileSetupFromForm(form) {
   const handle = cleanHandle(String(form.get("email") || "Player").split("@")[0]);
   return {
@@ -618,6 +818,52 @@ async function savePrivateSetup(profileId, setup) {
       is_private: true
     })), { onConflict: "profile_id,provider" });
   }
+}
+
+function list(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (!value) return [];
+  if (typeof value === "string") return splitList(value);
+  return [];
+}
+
+function splitList(value) {
+  return String(value || "")
+    .split(",")
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function availabilityLabel(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  return value.summary || "";
+}
+
+function gameLabel(value) {
+  const game = gameFor(value);
+  if (game) return game.name;
+  return String(value || "").replace(/-/g, " ").replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function providerLabel(value) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function protectedInfoMap() {
+  const protectedInfo = state.privateProfile?.protected_info || {};
+  const linkedInfo = {};
+  state.linkedAccounts.forEach(account => {
+    linkedInfo[account.provider] = account.account_handle;
+  });
+  return { ...linkedInfo, ...protectedInfo };
+}
+
+function initials(value) {
+  const words = String(value || "GC").trim().split(/\s+/).slice(0, 2);
+  return words.map(word => word[0]?.toUpperCase() || "").join("") || "GC";
 }
 
 function cleanHandle(value) {
