@@ -286,32 +286,16 @@ public class MainActivity extends Activity {
 
     private void renderDiscover() {
         JSONArray players = latestPlayers;
-        JSONArray posts = latestPosts;
-        JSONArray squads = latestSquads;
-        content.addView(buildHero(players == null ? 0 : players.length()));
+        content.addView(buildHero());
         content.addView(filterChips());
-        content.addView(section("Discover Players", "Sorted by compatibility for Apex Legends"));
-
-        for (int i = 0; players != null && i < players.length(); i++) {
-            JSONObject player = players.optJSONObject(i);
-            if (player != null) {
-                content.addView(playerCard(player, i));
-            }
+        if (players == null || players.length() == 0) {
+            content.addView(messageCard("No Matches Found", "Adjust your filters or refresh discovery.", MUTED));
+            return;
         }
-
-        content.addView(section("Active LFG Posts", "Jump into sessions already forming"));
-        LinearLayout lfgRow = new LinearLayout(this);
-        lfgRow.setOrientation(LinearLayout.VERTICAL);
-        for (int i = 0; posts != null && i < posts.length(); i++) {
-            JSONObject post = posts.optJSONObject(i);
-            if (post != null) lfgRow.addView(lfgCard(post));
-        }
-        content.addView(lfgRow);
-
-        content.addView(section("Your Squads", "Voice-ready groups for repeat sessions"));
-        for (int i = 0; squads != null && i < squads.length(); i++) {
-            JSONObject squad = squads.optJSONObject(i);
-            if (squad != null) content.addView(squadCard(squad));
+        JSONObject featured = players.optJSONObject(0);
+        if (featured != null) {
+            content.addView(playerCard(featured, 0));
+            content.addView(matchPanel(featured));
         }
     }
 
@@ -410,26 +394,22 @@ public class MainActivity extends Activity {
         return card;
     }
 
-    private View buildHero(int count) {
-        LinearLayout hero = panel(PANEL, dp(18), dp(16));
+    private View buildHero() {
+        LinearLayout hero = new LinearLayout(this);
         hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setPadding(0, dp(4), 0, dp(4));
 
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(iconButton("sliders"), new LinearLayout.LayoutParams(dp(42), dp(42)));
         LinearLayout copy = new LinearLayout(this);
         copy.setOrientation(LinearLayout.VERTICAL);
-        copy.addView(text("Discover Players", 24, TEXT, true));
-        copy.addView(text("We found " + count + " solid matches for your squad.", 14, MUTED, false));
+        copy.setGravity(Gravity.CENTER);
+        copy.addView(centerText("Discover Players", 18, TEXT, true));
+        copy.addView(centerText("We found someone great for your game", 12, MUTED, false));
         row.addView(copy, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        row.addView(badge(String.valueOf(count), GREEN, dp(48)));
+        row.addView(iconButton("tune"), new LinearLayout.LayoutParams(dp(42), dp(42)));
         hero.addView(row);
-
-        LinearLayout metrics = new LinearLayout(this);
-        metrics.setPadding(0, dp(14), 0, 0);
-        metrics.addView(metric("Apex", "Ranked"), weighted());
-        metrics.addView(metric("PC", "Crossplay"), weighted());
-        metrics.addView(metric("AEST", "Evening"), weighted());
-        hero.addView(metrics);
         return hero;
     }
 
@@ -439,44 +419,116 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, dp(12), 0, dp(8));
-        row.addView(chip("Apex Legends", true));
+        row.addView(chip("A  Apex Legends", true));
         row.addView(chip("Diamond - Master", false));
         row.addView(chip("PC", false));
         row.addView(chip("Crossplay", false));
-        row.addView(chip("Good Comms", false));
         scroller.addView(row);
         return scroller;
     }
 
     private View playerCard(JSONObject player, int index) {
-        LinearLayout card = panel(PANEL, dp(16), dp(14));
+        LinearLayout card = panel(PANEL, dp(14), dp(14));
         card.setOrientation(LinearLayout.VERTICAL);
+
+        card.addView(mediaPanel(player));
 
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.addView(avatar(player.optString("handle"), index));
+        top.setPadding(0, dp(12), 0, 0);
 
         LinearLayout identity = new LinearLayout(this);
         identity.setOrientation(LinearLayout.VERTICAL);
-        identity.setPadding(dp(12), 0, 0, 0);
-        identity.addView(text(player.optString("handle"), 22, TEXT, true));
-        identity.addView(text(player.optString("rank") + " - " + player.optString("region") + " - " + player.optInt("compatibility") + "% compatible", 13, MUTED, false));
+        LinearLayout nameRow = new LinearLayout(this);
+        nameRow.setGravity(Gravity.CENTER_VERTICAL);
+        nameRow.addView(text(player.optString("handle"), 26, TEXT, true));
+        TextView age = text("  " + player.optInt("age", 21), 16, MUTED, false);
+        nameRow.addView(age);
+        nameRow.addView(statusDot(player.optBoolean("online")));
+        identity.addView(nameRow);
+        identity.addView(text(player.optString("rank") + "   PC   Australia (AEST)", 14, MUTED, false));
         top.addView(identity, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        top.addView(statusDot(player.optBoolean("online")));
         card.addView(top);
 
         card.addView(tagRow(player.optJSONArray("playStyle")));
-        card.addView(text(player.optString("bio"), 14, MUTED, false));
-        card.addView(statsRow(player.optJSONObject("stats")));
-        card.addView(protectedPanel(player));
+        card.addView(text("\"" + player.optString("bio") + "\"", 14, MUTED, false));
+        card.addView(traitRow());
 
         LinearLayout actions = new LinearLayout(this);
-        actions.setPadding(0, dp(12), 0, 0);
+        actions.setGravity(Gravity.CENTER);
+        actions.setPadding(0, dp(18), 0, 0);
         String targetId = player.optString("id");
-        actions.addView(button("Pass", PANEL_ALT, v -> toast("Passed for now")), weighted());
-        actions.addView(button("More Info", PANEL_ALT, v -> toast("Profile preview coming next")), weighted());
-        actions.addView(button("Connect", GREEN, v -> sendConnect(targetId)), weighted());
+        actions.addView(actionStack("X", "PASS", PANEL_ALT, v -> toast("Passed for now")), weighted());
+        actions.addView(actionStack("...", "MORE INFO", PANEL_ALT, v -> toast("Profile preview coming next")), weighted());
+        actions.addView(actionStack("OK", "APPROVE", GREEN, v -> sendConnect(targetId)), weighted());
         card.addView(actions);
+
+        LinearLayout adjust = new LinearLayout(this);
+        adjust.setGravity(Gravity.CENTER);
+        adjust.setPadding(0, dp(12), 0, 0);
+        adjust.addView(text("Not a fit?  ", 12, MUTED, false));
+        adjust.addView(chip("Adjust Preferences", false));
+        card.addView(adjust);
+        return card;
+    }
+
+    private View mediaPanel(JSONObject player) {
+        LinearLayout media = panel(Color.rgb(9, 18, 31), dp(12), dp(10));
+        media.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.rgb(28, 47, 75), Color.rgb(5, 9, 18), Color.rgb(92, 44, 138)}
+        );
+        bg.setCornerRadius(dp(8));
+        bg.setStroke(1, LINE);
+        media.setBackground(bg);
+        media.setMinimumHeight(dp(230));
+
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.RIGHT);
+        top.addView(chip("1 / 12", false));
+        media.addView(top);
+
+        TextView play = centerText("PLAY", 28, TEXT, true);
+        play.setGravity(Gravity.CENTER);
+        media.addView(play, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+
+        LinearLayout thumbs = new LinearLayout(this);
+        thumbs.setGravity(Gravity.LEFT);
+        thumbs.addView(thumb("A"));
+        thumbs.addView(thumb("B"));
+        thumbs.addView(thumb("C"));
+        thumbs.addView(thumb("+3"));
+        media.addView(thumbs);
+        return media;
+    }
+
+    private View matchPanel(JSONObject player) {
+        LinearLayout card = panel(PANEL, dp(16), dp(14));
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.addView(centerText("OK", 42, GREEN, true));
+        card.addView(centerText("Great Match!", 26, TEXT, true));
+        card.addView(centerText("You and " + player.optString("handle") + " want to play the same game.", 14, MUTED, false));
+
+        LinearLayout faces = new LinearLayout(this);
+        faces.setGravity(Gravity.CENTER);
+        faces.setPadding(0, dp(16), 0, dp(12));
+        faces.addView(avatar(loggedInHandle, 1), new LinearLayout.LayoutParams(dp(68), dp(68)));
+        faces.addView(badge("VS", GREEN, dp(42)));
+        faces.addView(avatar(player.optString("handle"), 2), new LinearLayout.LayoutParams(dp(68), dp(68)));
+        card.addView(faces);
+
+        card.addView(matchReason("Same Game & Mode", "Apex Legends Ranked"));
+        card.addView(matchReason("Similar Rank", "You: Diamond II - Them: " + player.optString("rank")));
+        card.addView(matchReason("Similar Playstyle", "Competitive & Team Player"));
+        card.addView(matchReason("Good Schedule Overlap", "Tonight, 7PM - 11PM (AEST)"));
+
+        card.addView(button("Start Conversation", GREEN, v -> {
+            currentTab = "Messages";
+            renderBottomNav();
+            renderCurrentView();
+        }), matchWrap());
+        card.addView(button("Keep Discovering", PANEL_ALT, v -> toast("Next player queue coming soon")), matchWrap());
         return card;
     }
 
@@ -493,6 +545,81 @@ public class MainActivity extends Activity {
             panel.addView(text("No protected info added yet.", 13, MUTED, false));
         }
         return panel;
+    }
+
+    private TextView iconButton(String label) {
+        TextView item = text(label, 12, TEXT, true);
+        item.setGravity(Gravity.CENTER);
+        item.setBackground(rounded(Color.rgb(7, 13, 23), LINE, dp(8)));
+        return item;
+    }
+
+    private TextView centerText(String value, int size, int color, boolean bold) {
+        TextView item = text(value, size, color, bold);
+        item.setGravity(Gravity.CENTER);
+        return item;
+    }
+
+    private TextView thumb(String label) {
+        TextView item = text(label, 12, TEXT, true);
+        item.setGravity(Gravity.CENTER);
+        item.setBackground(rounded(Color.rgb(18, 30, 49), LINE, dp(8)));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(58), dp(48));
+        params.setMargins(0, 0, dp(8), 0);
+        item.setLayoutParams(params);
+        return item;
+    }
+
+    private View traitRow() {
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(8), 0, 0);
+        row.addView(trait("Aggressive"));
+        row.addView(trait("Strategic"));
+        row.addView(trait("Good Callouts"));
+        row.addView(trait("Works Under Pressure"));
+        scroller.addView(row);
+        return scroller;
+    }
+
+    private TextView trait(String label) {
+        TextView item = text(label, 11, MUTED, false);
+        item.setPadding(0, 0, dp(14), 0);
+        return item;
+    }
+
+    private View actionStack(String symbol, String label, int color, View.OnClickListener listener) {
+        LinearLayout stack = new LinearLayout(this);
+        stack.setOrientation(LinearLayout.VERTICAL);
+        stack.setGravity(Gravity.CENTER);
+        TextView circle = text(symbol, 18, color == GREEN ? TEXT : MUTED, true);
+        circle.setGravity(Gravity.CENTER);
+        circle.setBackground(rounded(color, color == GREEN ? GREEN : LINE, dp(28)));
+        circle.setOnClickListener(listener);
+        stack.addView(circle, new LinearLayout.LayoutParams(dp(58), dp(58)));
+        TextView caption = centerText(label, 11, color == GREEN ? GREEN : MUTED, false);
+        stack.addView(caption);
+        return stack;
+    }
+
+    private View matchReason(String title, String body) {
+        LinearLayout row = panel(PANEL_ALT, dp(10), dp(0));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        TextView icon = badge("OK", GREEN, dp(36));
+        row.addView(icon);
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(10), 0, 0, 0);
+        copy.addView(text(title, 14, TEXT, true));
+        copy.addView(text(body, 13, MUTED, false));
+        row.addView(copy, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        LinearLayout.LayoutParams params = matchWrap();
+        params.setMargins(0, 0, 0, dp(8));
+        row.setLayoutParams(params);
+        return row;
     }
 
     private String formatAccounts(JSONObject accounts) {
