@@ -6,9 +6,10 @@ The project is a simple Java Android client for testing the Raspberry Pi backend
 
 - configurable API base URL
 - concept-inspired dark Gamer Connect UI
-- sign up and login controls
+- sign up and login controls on the Profile tab
 - backend status indicator
 - discovery player cards with badges, stats, and match actions
+- Messages tab for matched players, groups, and starting new chats
 - protected Discord/platform info messaging
 - LFG posts
 - squads
@@ -37,4 +38,4 @@ Handle: NovaPulse
 Password: testpass123
 ```
 
-Use Login before tapping Connect. Guest mode can browse discovery, but connection requests require a session token.
+Open Profile to log in or sign up before tapping Connect. Guest mode can browse discovery, but connection requests and matched-player chats require a session token.

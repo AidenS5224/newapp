@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.EditText;
@@ -45,10 +46,16 @@ public class MainActivity extends Activity {
     private EditText passwordInput;
     private TextView statusText;
     private TextView profileText;
+    private LinearLayout navBar;
     private LinearLayout content;
     private String apiBase = "http://10.0.2.2:8080";
     private String sessionToken = "";
     private String loggedInHandle = "Guest";
+    private String currentTab = "Discover";
+    private JSONObject latestHealth;
+    private JSONArray latestPlayers;
+    private JSONArray latestPosts;
+    private JSONArray latestSquads;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -103,20 +110,11 @@ public class MainActivity extends Activity {
         apiInput = input("Backend URL", apiBase, false);
         loginInput = input("Email or handle", "NovaPulse", false);
         passwordInput = input("Password", "testpass123", true);
-        header.addView(apiInput);
-
-        LinearLayout authRow = new LinearLayout(this);
-        authRow.setOrientation(LinearLayout.HORIZONTAL);
-        authRow.addView(loginInput, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        authRow.addView(passwordInput, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        header.addView(authRow);
 
         LinearLayout actionRow = new LinearLayout(this);
         actionRow.setGravity(Gravity.CENTER_VERTICAL);
         actionRow.addView(button("Refresh", PURPLE, v -> loadAll()), weighted());
-        actionRow.addView(button("Login", GREEN, v -> login()), weighted());
-        actionRow.addView(button("Sign Up", PURPLE, v -> signup()), weighted());
-        header.addView(actionRow);
+        header.addView(actionRow, matchWrap());
 
         profileText = text("Guest mode: protected handles are hidden", 12, MUTED, false);
         profileText.setPadding(0, dp(8), 0, 0);
@@ -125,16 +123,32 @@ public class MainActivity extends Activity {
     }
 
     private View buildBottomNav() {
-        LinearLayout nav = new LinearLayout(this);
-        nav.setGravity(Gravity.CENTER);
-        nav.setPadding(dp(10), dp(8), dp(10), dp(8));
-        nav.setBackgroundColor(Color.rgb(3, 7, 15));
-        nav.addView(navItem("Servers", false), weighted());
-        nav.addView(navItem("Events", false), weighted());
-        nav.addView(navItem("Discover", true), weighted());
-        nav.addView(navItem("Messages", false), weighted());
-        nav.addView(navItem("Profile", false), weighted());
-        return nav;
+        navBar = new LinearLayout(this);
+        navBar.setGravity(Gravity.CENTER);
+        navBar.setPadding(dp(10), dp(8), dp(10), dp(8));
+        navBar.setBackgroundColor(Color.rgb(3, 7, 15));
+        renderBottomNav();
+        return navBar;
+    }
+
+    private void renderBottomNav() {
+        navBar.removeAllViews();
+        addNavItem("Servers");
+        addNavItem("Events");
+        addNavItem("Discover");
+        addNavItem("Messages");
+        addNavItem("Profile");
+    }
+
+    private void addNavItem(String label) {
+        boolean active = label.equals(currentTab);
+        TextView item = navItem(label, active);
+        item.setOnClickListener(v -> {
+            currentTab = label;
+            renderBottomNav();
+            renderCurrentView();
+        });
+        navBar.addView(item, weighted());
     }
 
     private TextView navItem(String label, boolean active) {
@@ -167,6 +181,8 @@ public class MainActivity extends Activity {
                 loggedInHandle = user == null ? "Player" : user.optString("handle", "Player");
                 runOnUiThread(() -> {
                     Toast.makeText(this, "Logged in as " + loggedInHandle, Toast.LENGTH_SHORT).show();
+                    currentTab = "Profile";
+                    renderBottomNav();
                     loadAll();
                 });
             } catch (Exception ex) {
@@ -203,6 +219,8 @@ public class MainActivity extends Activity {
                 loggedInHandle = handle;
                 runOnUiThread(() -> {
                     Toast.makeText(this, "Signed up as " + loggedInHandle, Toast.LENGTH_SHORT).show();
+                    currentTab = "Profile";
+                    renderBottomNav();
                     loadAll();
                 });
             } catch (Exception ex) {
@@ -222,7 +240,11 @@ public class MainActivity extends Activity {
                 JSONObject players = getJson("/api/players?game=apex-legends&platform=PC");
                 JSONObject lfg = getJson("/api/lfg");
                 JSONObject squads = getJson("/api/squads");
-                runOnUiThread(() -> render(health, players.optJSONArray("players"), lfg.optJSONArray("posts"), squads.optJSONArray("squads")));
+                latestHealth = health;
+                latestPlayers = players.optJSONArray("players");
+                latestPosts = lfg.optJSONArray("posts");
+                latestSquads = squads.optJSONArray("squads");
+                runOnUiThread(this::renderCurrentView);
             } catch (Exception ex) {
                 runOnUiThread(() -> {
                     statusText.setText("Offline");
@@ -234,14 +256,38 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    private void render(JSONObject health, JSONArray players, JSONArray posts, JSONArray squads) {
+    private void renderCurrentView() {
+        JSONObject health = latestHealth == null ? new JSONObject() : latestHealth;
         statusText.setText(health.optBoolean("ok") ? "Online" : "Offline");
         statusText.setTextColor(health.optBoolean("ok") ? GREEN : RED);
         profileText.setText(sessionToken.isEmpty()
                 ? "Guest mode: protected handles are hidden"
-                : "Logged in as " + loggedInHandle + " • protected info unlocks on approved connections");
+                : "Logged in as " + loggedInHandle + " - protected info unlocks on approved connections");
 
         content.removeAllViews();
+        if ("Messages".equals(currentTab)) {
+            renderMessages();
+            return;
+        }
+        if ("Profile".equals(currentTab)) {
+            renderProfile();
+            return;
+        }
+        if ("Events".equals(currentTab)) {
+            renderEvents();
+            return;
+        }
+        if ("Servers".equals(currentTab)) {
+            renderServers();
+            return;
+        }
+        renderDiscover();
+    }
+
+    private void renderDiscover() {
+        JSONArray players = latestPlayers;
+        JSONArray posts = latestPosts;
+        JSONArray squads = latestSquads;
         content.addView(buildHero(players == null ? 0 : players.length()));
         content.addView(filterChips());
         content.addView(section("Discover Players", "Sorted by compatibility for Apex Legends"));
@@ -267,6 +313,101 @@ public class MainActivity extends Activity {
             JSONObject squad = squads.optJSONObject(i);
             if (squad != null) content.addView(squadCard(squad));
         }
+    }
+
+    private void renderMessages() {
+        content.addView(section("Messages", "Chats from matched players and groups"));
+        content.addView(messageCard(
+                "Start New Chat",
+                sessionToken.isEmpty()
+                        ? "Log in from Profile, then start chats with approved matches and groups."
+                        : "Choose an approved match or group below to start a conversation.",
+                PURPLE
+        ));
+
+        content.addView(section("Matched Players", "People with approved connections"));
+        int matched = 0;
+        for (int i = 0; latestPlayers != null && i < latestPlayers.length(); i++) {
+            JSONObject player = latestPlayers.optJSONObject(i);
+            if (player == null) continue;
+            if (player.optBoolean("protectedVisible") && !loggedInHandle.equals(player.optString("handle"))) {
+                content.addView(chatCard(player.optString("handle"), "Protected info unlocked - ready to chat", GREEN));
+                matched++;
+            }
+        }
+        if (matched == 0) {
+            content.addView(messageCard("No matched players yet", "Use Discover to connect. Approved connections will appear here.", MUTED));
+        }
+
+        content.addView(section("Groups", "Squads and server-style chats"));
+        for (int i = 0; latestSquads != null && i < latestSquads.length(); i++) {
+            JSONObject squad = latestSquads.optJSONObject(i);
+            if (squad != null) {
+                content.addView(chatCard(squad.optString("name"), squad.optString("gameName") + " group chat", PURPLE));
+            }
+        }
+    }
+
+    private void renderProfile() {
+        content.addView(section("Profile", "Account, sign in, and local backend setup"));
+
+        LinearLayout card = panel(PANEL, dp(16), dp(14));
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.addView(text(sessionToken.isEmpty() ? "Sign In" : "Signed In", 20, TEXT, true));
+        card.addView(text(sessionToken.isEmpty()
+                ? "Use a seeded account or create a local test account."
+                : "You are signed in as " + loggedInHandle + ".", 13, MUTED, false));
+        detach(apiInput);
+        detach(loginInput);
+        detach(passwordInput);
+        card.addView(apiInput);
+        LinearLayout authRow = new LinearLayout(this);
+        authRow.setOrientation(LinearLayout.HORIZONTAL);
+        authRow.addView(loginInput, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        authRow.addView(passwordInput, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(authRow, matchWrap());
+        LinearLayout actions = new LinearLayout(this);
+        actions.addView(button("Login", GREEN, v -> login()), weighted());
+        actions.addView(button("Sign Up", PURPLE, v -> signup()), weighted());
+        actions.addView(button("Refresh", PANEL_ALT, v -> loadAll()), weighted());
+        card.addView(actions);
+        content.addView(card);
+
+        content.addView(messageCard(
+                "Protected Info",
+                "Discord, platform handles, Tracker Network links, and contact details stay hidden until a connection is approved.",
+                GREEN
+        ));
+        content.addView(messageCard("Seed Login", "Handle: NovaPulse\nPassword: testpass123", PURPLE));
+    }
+
+    private void renderEvents() {
+        content.addView(section("Events", "Sessions and game nights"));
+        content.addView(messageCard("Tonight", "Ranked Apex testing window - 7PM to 11PM AEST", GREEN));
+        content.addView(messageCard("Coming Next", "Create event, RSVP, reminders, and squad invites will live here.", PURPLE));
+    }
+
+    private void renderServers() {
+        content.addView(section("Servers", "Communities connected to Gamer Connect"));
+        content.addView(messageCard("Gamer Connect HQ", "Discord-style community hub for updates, feedback, and early testers.", PURPLE));
+        content.addView(messageCard("Weekend Warriors", "Apex Legends squad server - voice preferred", GREEN));
+    }
+
+    private View chatCard(String title, String body, int accent) {
+        LinearLayout card = panel(PANEL, dp(14), dp(12));
+        card.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(avatar(title, title.length()), new LinearLayout.LayoutParams(dp(54), dp(54)));
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(12), 0, 0, 0);
+        copy.addView(text(title, 17, TEXT, true));
+        copy.addView(text(body, 13, MUTED, false));
+        row.addView(copy, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(button("Chat", accent, v -> toast("Chat composer coming next")), new LinearLayout.LayoutParams(dp(88), dp(44)));
+        card.addView(row);
+        return card;
     }
 
     private View buildHero(int count) {
@@ -319,7 +460,7 @@ public class MainActivity extends Activity {
         identity.setOrientation(LinearLayout.VERTICAL);
         identity.setPadding(dp(12), 0, 0, 0);
         identity.addView(text(player.optString("handle"), 22, TEXT, true));
-        identity.addView(text(player.optString("rank") + " • " + player.optString("region") + " • " + player.optInt("compatibility") + "% compatible", 13, MUTED, false));
+        identity.addView(text(player.optString("rank") + " - " + player.optString("region") + " - " + player.optInt("compatibility") + "% compatible", 13, MUTED, false));
         top.addView(identity, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         top.addView(statusDot(player.optBoolean("online")));
         card.addView(top);
@@ -393,7 +534,7 @@ public class MainActivity extends Activity {
         LinearLayout card = panel(PANEL, dp(14), dp(12));
         card.setOrientation(LinearLayout.VERTICAL);
         card.addView(text(post.optString("title"), 17, TEXT, true));
-        card.addView(text(post.optString("gameName") + " • " + post.optString("mode") + " • " + post.optString("rankRange"), 13, MUTED, false));
+        card.addView(text(post.optString("gameName") + " - " + post.optString("mode") + " - " + post.optString("rankRange"), 13, MUTED, false));
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.addView(text(post.optString("startsAt"), 13, MUTED, false), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
@@ -406,7 +547,7 @@ public class MainActivity extends Activity {
         LinearLayout card = panel(PANEL, dp(14), dp(12));
         card.setOrientation(LinearLayout.VERTICAL);
         card.addView(text(squad.optString("name"), 17, TEXT, true));
-        card.addView(text(squad.optString("gameName") + " • " + squad.optInt("openSlots") + " open slot(s) • " + squad.optString("voicePreference"), 13, GREEN, false));
+        card.addView(text(squad.optString("gameName") + " - " + squad.optInt("openSlots") + " open slot(s) - " + squad.optString("voicePreference"), 13, GREEN, false));
         card.addView(text(squad.optString("description"), 13, MUTED, false));
         return card;
     }
@@ -625,6 +766,12 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
+    }
+
+    private void detach(View view) {
+        if (view.getParent() instanceof ViewGroup) {
+            ((ViewGroup) view.getParent()).removeView(view);
+        }
     }
 
     private int dp(int value) {
