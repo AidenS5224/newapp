@@ -12,14 +12,14 @@ First working build path for the Gamer Connect product:
 - Player discovery filters by game/platform
 - Compatibility score for discovery cards
 - Connection request creation
+- Private owner dashboard with analytics and backend controls
 - Local control terminal for inspecting and editing test data
 - CORS enabled for later web/PWA clients
 
 ## Run Backend On Windows
 
 ```powershell
-cd backend
-python app.py
+python gamer.py dev
 ```
 
 Then open:
@@ -28,11 +28,23 @@ Then open:
 http://localhost:8080/api/health
 ```
 
+The startup banner also prints your private owner panel URL:
+
+```text
+http://127.0.0.1:8080/owner?token=YOUR_LOCAL_ADMIN_TOKEN
+```
+
+You can print it again with:
+
+```powershell
+python gamer.py admin
+```
+
 ## Run Backend On Raspberry Pi OS
 
 ```bash
-cd gamer-connect/backend
-python3 app.py
+cd gamer-connect
+python3 gamer.py dev
 ```
 
 For phone testing, find the Pi IP address:
@@ -83,6 +95,17 @@ GET  /api/squads
 POST /api/connections
 ```
 
+The owner panel loads at `/owner`. The private admin API routes require
+`X-Admin-Token`, `Authorization: Bearer TOKEN`, or the `?token=` query value:
+
+```text
+GET  /api/admin/overview
+GET  /api/admin/export
+POST /api/admin/player-online
+POST /api/admin/connection-status
+POST /api/admin/reset
+```
+
 Example connection request:
 
 ```json
@@ -104,10 +127,8 @@ Example connection request:
 
 ## Backend Control Terminal
 
-From `backend/`:
-
 ```powershell
-python control.py
+python gamer.py control
 ```
 
 Useful commands:
@@ -122,4 +143,17 @@ squads
 connections
 export ./data/export.json
 reset
+```
+
+One-off commands:
+
+```powershell
+python gamer.py status
+python gamer.py players
+python gamer.py online p_ghost on
+python gamer.py health
+python gamer.py doctor
+python gamer.py urls
+python gamer.py admin
+python gamer.py token
 ```

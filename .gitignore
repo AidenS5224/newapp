@@ -1,5 +1,6 @@
 backend/data/*.sqlite3
 backend/data/*.sqlite3-*
+backend/data/admin_token.txt
 backend/__pycache__/
 *.pyc
 .gradle/

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -9,8 +10,12 @@ import urllib.request
 from pathlib import Path
 
 
-BASE_URL = "http://127.0.0.1:8080"
+TEST_PORT = "18080"
+BASE_URL = f"http://127.0.0.1:{TEST_PORT}"
 APP = Path(__file__).resolve().parent / "app.py"
+sys.path.insert(0, str(APP.parent))
+
+from app import admin_token  # noqa: E402
 
 
 def get_json(path: str) -> dict:
@@ -18,12 +23,25 @@ def get_json(path: str) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
-def post_json(path: str, payload: dict) -> dict:
+def get_admin_json(path: str) -> dict:
+    request = urllib.request.Request(
+        f"{BASE_URL}{path}",
+        headers={"X-Admin-Token": admin_token()},
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def post_json(path: str, payload: dict, token: str | None = None) -> dict:
     body = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-Admin-Token"] = token
     request = urllib.request.Request(
         f"{BASE_URL}{path}",
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=5) as response:
@@ -47,6 +65,7 @@ def main() -> None:
     proc = subprocess.Popen(
         [sys.executable, str(APP)],
         cwd=str(APP.parent),
+        env={**os.environ, "GAMER_CONNECT_PORT": TEST_PORT},
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -72,6 +91,30 @@ def main() -> None:
         assert lfg, "expected seeded LFG posts"
         assert squads, "expected seeded squads"
         assert request["status"] == "pending", "expected pending connection request"
+
+        try:
+            get_json("/api/admin/overview")
+            raise AssertionError("expected owner overview to require a token")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 401, "expected unauthorized owner overview to return 401"
+
+        overview = get_admin_json("/api/admin/overview")
+        assert overview["summary"]["counts"]["players"] >= 3, "expected admin player count"
+        assert overview["summary"]["counts"]["connectionRequests"] >= 1, "expected admin connection count"
+
+        updated = post_json(
+            "/api/admin/player-online",
+            {"playerId": "p_ghost", "online": True},
+            token=admin_token(),
+        )
+        assert updated["online"] is True, "expected admin online update"
+
+        connection = post_json(
+            "/api/admin/connection-status",
+            {"requestId": request["id"], "status": "accepted"},
+            token=admin_token(),
+        )
+        assert connection["status"] == "accepted", "expected admin connection approval"
 
         print("API smoke test passed")
     finally:

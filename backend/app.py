@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import sqlite3
 import time
 from http import HTTPStatus
@@ -10,11 +11,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from admin_panel import OWNER_PANEL_HTML
+
 
 APP_NAME = "Gamer Connect API"
+APP_VERSION = "0.1"
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = Path(os.environ.get("GAMER_CONNECT_DB", DATA_DIR / "gamer_connect.sqlite3"))
+TOKEN_PATH = DATA_DIR / "admin_token.txt"
 HOST = os.environ.get("GAMER_CONNECT_HOST", "0.0.0.0")
 PORT = int(os.environ.get("GAMER_CONNECT_PORT", "8080"))
 
@@ -29,6 +34,18 @@ def db() -> sqlite3.Connection:
     conn.row_factory = dict_factory
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def admin_token() -> str:
+    env_token = os.environ.get("GAMER_CONNECT_ADMIN_TOKEN")
+    if env_token:
+        return env_token.strip()
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if TOKEN_PATH.exists():
+        return TOKEN_PATH.read_text(encoding="utf-8").strip()
+    token = secrets.token_urlsafe(32)
+    TOKEN_PATH.write_text(token, encoding="utf-8")
+    return token
 
 
 def parse_json(value: str | None, fallback: Any) -> Any:
@@ -352,6 +369,99 @@ def list_squads(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     ]
 
 
+def list_connection_requests(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT
+            cr.*,
+            fp.handle AS from_handle,
+            tp.handle AS to_handle
+        FROM connection_requests cr
+        JOIN players fp ON fp.id = cr.from_player_id
+        JOIN players tp ON tp.id = cr.to_player_id
+        ORDER BY cr.created_at DESC
+        """
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "fromPlayerId": row["from_player_id"],
+            "toPlayerId": row["to_player_id"],
+            "from": row["from_handle"],
+            "to": row["to_handle"],
+            "message": row["message"],
+            "status": row["status"],
+            "createdAt": row["created_at"],
+            "created": time.strftime("%Y-%m-%d %H:%M", time.localtime(row["created_at"])),
+        }
+        for row in rows
+    ]
+
+
+def top_games(players: list[dict[str, Any]], games: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    names = {game["id"]: game["name"] for game in games}
+    counts: dict[str, int] = {}
+    for player in players:
+        for game_id in player["topGames"]:
+            counts[game_id] = counts.get(game_id, 0) + 1
+    return [
+        {"id": game_id, "name": names.get(game_id, game_id), "players": count}
+        for game_id, count in sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    ]
+
+
+def admin_overview(conn: sqlite3.Connection) -> dict[str, Any]:
+    players = list_players(conn, {})
+    games = list_games(conn)
+    lfg_posts = list_lfg(conn)
+    squads = list_squads(conn)
+    connection_requests = list_connection_requests(conn)
+    pending = [request for request in connection_requests if request["status"] == "pending"]
+    return {
+        "summary": {
+            "counts": {
+                "players": len(players),
+                "onlinePlayers": sum(1 for player in players if player["online"]),
+                "games": len(games),
+                "lfgPosts": len(lfg_posts),
+                "squads": len(squads),
+                "connectionRequests": len(connection_requests),
+                "pendingConnections": len(pending),
+            },
+            "topGames": top_games(players, games),
+        },
+        "players": players,
+        "games": games,
+        "lfgPosts": lfg_posts,
+        "squads": squads,
+        "connectionRequests": connection_requests,
+        "system": {
+            "app": APP_NAME,
+            "version": APP_VERSION,
+            "host": HOST,
+            "port": PORT,
+            "database": str(DB_PATH),
+            "ownerPanel": f"http://127.0.0.1:{PORT}/owner",
+            "time": int(time.time()),
+        },
+    }
+
+
+def reset_database() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with db() as conn:
+        conn.executescript(
+            """
+            DROP TABLE IF EXISTS connection_requests;
+            DROP TABLE IF EXISTS squads;
+            DROP TABLE IF EXISTS lfg_posts;
+            DROP TABLE IF EXISTS games;
+            DROP TABLE IF EXISTS players;
+            """
+        )
+    init_db()
+
+
 class ApiHandler(BaseHTTPRequestHandler):
     server_version = "GamerConnectAPI/0.1"
 
@@ -365,8 +475,18 @@ class ApiHandler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
         try:
             with db() as conn:
-                if parsed.path == "/api/health":
+                if parsed.path == "/owner":
+                    self.send_html(OWNER_PANEL_HTML)
+                elif parsed.path == "/api/health":
                     self.send_json({"ok": True, "app": APP_NAME, "time": int(time.time())})
+                elif parsed.path == "/api/admin/overview":
+                    if not self.is_admin(query):
+                        return
+                    self.send_json(admin_overview(conn))
+                elif parsed.path == "/api/admin/export":
+                    if not self.is_admin(query):
+                        return
+                    self.send_json({"exportedAt": int(time.time()), "data": admin_overview(conn)})
                 elif parsed.path == "/api/games":
                     self.send_json({"games": list_games(conn)})
                 elif parsed.path == "/api/players":
@@ -393,8 +513,40 @@ class ApiHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         try:
             payload = self.read_json_body()
+            if parsed.path == "/api/admin/reset":
+                if not self.is_admin(parse_qs(parsed.query)):
+                    return
+                reset_database()
+                self.send_json({"ok": True, "message": "Database reset"})
+                return
             with db() as conn:
-                if parsed.path == "/api/connections":
+                if parsed.path == "/api/admin/player-online":
+                    if not self.is_admin(parse_qs(parsed.query)):
+                        return
+                    player_id = payload.get("playerId")
+                    online = payload.get("online")
+                    if not player_id or not isinstance(online, bool):
+                        self.send_error_json(HTTPStatus.BAD_REQUEST, "playerId and boolean online are required")
+                        return
+                    result = conn.execute("UPDATE players SET online = ? WHERE id = ?", (1 if online else 0, player_id))
+                    if result.rowcount == 0:
+                        self.send_error_json(HTTPStatus.NOT_FOUND, "Player not found")
+                        return
+                    self.send_json({"playerId": player_id, "online": online})
+                elif parsed.path == "/api/admin/connection-status":
+                    if not self.is_admin(parse_qs(parsed.query)):
+                        return
+                    request_id = payload.get("requestId")
+                    status = payload.get("status")
+                    if status not in {"pending", "accepted", "rejected"} or not request_id:
+                        self.send_error_json(HTTPStatus.BAD_REQUEST, "requestId and status pending/accepted/rejected are required")
+                        return
+                    result = conn.execute("UPDATE connection_requests SET status = ? WHERE id = ?", (status, request_id))
+                    if result.rowcount == 0:
+                        self.send_error_json(HTTPStatus.NOT_FOUND, "Connection request not found")
+                        return
+                    self.send_json({"requestId": request_id, "status": status})
+                elif parsed.path == "/api/connections":
                     from_player_id = payload.get("fromPlayerId", "p_novapulse")
                     to_player_id = payload.get("toPlayerId")
                     message = payload.get("message", "Want to squad up?")
@@ -430,11 +582,32 @@ class ApiHandler(BaseHTTPRequestHandler):
             raise ValueError("JSON body must be an object")
         return payload
 
+    def is_admin(self, query: dict[str, list[str]]) -> bool:
+        expected = admin_token()
+        supplied = self.headers.get("X-Admin-Token", "").strip()
+        auth = self.headers.get("Authorization", "").strip()
+        if auth.lower().startswith("bearer "):
+            supplied = auth[7:].strip()
+        supplied = supplied or query.get("token", [""])[0].strip()
+        if secrets.compare_digest(supplied, expected):
+            return True
+        self.send_error_json(HTTPStatus.UNAUTHORIZED, "Owner token required")
+        return False
+
     def send_json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_cors_headers()
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_html(self, html: str, status: HTTPStatus = HTTPStatus.OK) -> None:
+        body = html.encode("utf-8")
+        self.send_response(status)
+        self.send_cors_headers()
+        self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -445,7 +618,7 @@ class ApiHandler(BaseHTTPRequestHandler):
     def send_cors_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Admin-Token, Authorization")
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"[{self.log_date_time_string()}] {self.address_string()} {fmt % args}")
@@ -453,8 +626,10 @@ class ApiHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     init_db()
+    token = admin_token()
     server = ThreadingHTTPServer((HOST, PORT), ApiHandler)
     print(f"{APP_NAME} listening on http://{HOST}:{PORT}")
+    print(f"Owner panel: http://127.0.0.1:{PORT}/owner?token={token}")
     print(f"Database: {DB_PATH}")
     try:
         server.serve_forever()
