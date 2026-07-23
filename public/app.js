@@ -6,12 +6,35 @@ const tabs = [
   ["profile", "Profile"]
 ];
 
+const popularGames = [
+  "Apex Legends",
+  "Valorant",
+  "Call of Duty: Warzone",
+  "Fortnite",
+  "Minecraft",
+  "Roblox",
+  "League of Legends",
+  "Counter-Strike 2",
+  "Overwatch 2",
+  "Rocket League",
+  "Rainbow Six Siege",
+  "Destiny 2",
+  "Grand Theft Auto V",
+  "EA Sports FC",
+  "NBA 2K",
+  "Helldivers 2"
+];
+
+const platformOptions = ["PC", "PlayStation", "Xbox", "Nintendo Switch", "Mobile"];
+const playStyleOptions = ["Competitive", "Casual", "Good Comms", "Team Player", "Aggressive", "Strategic", "Coach / Mentor"];
+
 const state = {
   tab: "profile",
   authMode: "signup",
   authMessage: "",
   profileEdit: false,
   profileMessage: "",
+  profileDraftGames: null,
   ready: false,
   config: null,
   supabase: null,
@@ -68,7 +91,7 @@ async function loadData() {
   }
   await ensureProfile();
   const [profiles, games, feed, lfg, squads] = await Promise.all([
-    read("profiles", "id, handle, display_name, age, region, timezone, platforms, top_games, rank, play_style, availability, bio, avatar_url, online, created_at"),
+    read("profiles", "id, handle, display_name, age, region, timezone, platforms, top_games, rank, play_style, availability, bio, avatar_url, online, stats, created_at"),
     read("games", "*"),
     read("feed_posts", "*", { order: "created_at" }),
     read("lfg_posts", "*", { order: "created_at" }),
@@ -408,6 +431,7 @@ function renderSignedInProfile() {
   const styles = list(profile.play_style);
   const availability = availabilityLabel(profile.availability);
   const stats = profile.stats || {};
+  const gameRanks = stats.gameRanks || {};
   return `
     <section class="profile-page">
       <div class="profile-hero-card">
@@ -422,7 +446,6 @@ function renderSignedInProfile() {
         </div>
         <p class="profile-bio">${escapeHtml(profile.bio || "No bio yet. Add a short intro so squads know what kind of teammate you are.")}</p>
         <div class="profile-meta">
-          <span>${escapeHtml(profile.rank || "Unranked")}</span>
           <span>${escapeHtml(profile.region || "Unknown region")}</span>
           <span>${escapeHtml(profile.timezone || "Timezone not set")}</span>
         </div>
@@ -435,7 +458,7 @@ function renderSignedInProfile() {
       <div class="profile-grid">
         <div class="card">
           <h3>Top Games</h3>
-          ${games.length ? games.map(value => `<span class="pill hot">${escapeHtml(value)}</span>`).join("") : `<p>No games set yet.</p>`}
+          ${games.length ? games.map(value => `<div class="game-rank-row"><span class="pill hot">${escapeHtml(value)}</span><span>${escapeHtml(gameRanks[value] || "Rank not set")}</span></div>`).join("") : `<p>No games set yet.</p>`}
         </div>
         <div class="card">
           <h3>Platforms</h3>
@@ -471,6 +494,8 @@ function renderSignedInProfile() {
 function renderProfileEditor() {
   const profile = state.profile || {};
   const protectedInfo = protectedInfoMap();
+  const selectedGames = draftGames(profile);
+  const gameRanks = profile.stats?.gameRanks || {};
   return `
     <form class="profile-editor" data-save-profile>
       <div class="editor-head">
@@ -492,14 +517,44 @@ function renderProfileEditor() {
           <label>Age<input class="field" name="age" type="number" min="13" max="120" value="${escapeAttribute(profile.age || "")}" placeholder="21"></label>
           <label>Region<input class="field" name="region" value="${escapeAttribute(profile.region || "")}" placeholder="Australia"></label>
           <label>Timezone<input class="field" name="timezone" value="${escapeAttribute(profile.timezone || "")}" placeholder="AEST"></label>
-          <label>Rank<input class="field" name="rank" value="${escapeAttribute(profile.rank || "")}" placeholder="Diamond II"></label>
           <label>Bio<textarea name="bio" placeholder="Tell players what kind of squad you are looking for.">${escapeHtml(profile.bio || "")}</textarea></label>
         </section>
         <section class="card profile-card">
           <h3>Gaming Stack</h3>
-          <label>Top Games<input class="field" name="top_games" value="${escapeAttribute(list(profile.top_games).join(", "))}" placeholder="Apex Legends, Valorant"></label>
-          <label>Platforms<input class="field" name="platforms" value="${escapeAttribute(list(profile.platforms).join(", "))}" placeholder="PC, PlayStation, Xbox"></label>
-          <label>Play Style<input class="field" name="play_style" value="${escapeAttribute(list(profile.play_style).join(", "))}" placeholder="Competitive, Good Comms, Team Player"></label>
+          <input type="hidden" name="top_games" value="${escapeAttribute(selectedGames.join(", "))}">
+          <div class="game-picker">
+            <label>Search Popular Games
+              <div class="game-search-row">
+                <input class="field" name="game_search" list="popular-games" placeholder="Search or type a game">
+                <button class="button dark" type="button" data-add-game>Add</button>
+              </div>
+            </label>
+            <datalist id="popular-games">
+              ${popularGames.map(game => `<option value="${escapeAttribute(game)}"></option>`).join("")}
+            </datalist>
+            <div class="popular-games">
+              ${popularGames.slice(0, 10).map(game => `<button class="pill ${selectedGames.includes(game) ? "hot" : ""}" type="button" data-pick-game="${escapeAttribute(game)}">${escapeHtml(game)}</button>`).join("")}
+            </div>
+            <div class="selected-games">
+              ${selectedGames.length ? selectedGames.map(game => `
+                <div class="selected-game">
+                  <button class="button dark remove-game" type="button" data-remove-game="${escapeAttribute(game)}">x</button>
+                  <strong>${escapeHtml(game)}</strong>
+                  <label>Rank<input class="field" name="rank_${escapeAttribute(gameKey(game))}" value="${escapeAttribute(gameRanks[game] || "")}" placeholder="Diamond II, Gold, Casual"></label>
+                </div>
+              `).join("") : `<p>No games selected yet.</p>`}
+            </div>
+          </div>
+          <label>Platform
+            <select class="field" name="platform">
+              ${platformOptions.map(option => `<option value="${escapeAttribute(option)}" ${list(profile.platforms)[0] === option ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+            </select>
+          </label>
+          <label>Play Style
+            <select class="field" name="play_style">
+              ${playStyleOptions.map(option => `<option value="${escapeAttribute(option)}" ${list(profile.play_style)[0] === option ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+            </select>
+          </label>
           <label>Availability<input class="field" name="availability" value="${escapeAttribute(availabilityLabel(profile.availability))}" placeholder="Evenings, 7PM - 11PM AEST"></label>
           <label>Avatar URL<input class="field" name="avatar_url" value="${escapeAttribute(profile.avatar_url || "")}" placeholder="https://..."></label>
         </section>
@@ -538,14 +593,19 @@ function bindPageEvents() {
   document.querySelector("[data-edit-profile]")?.addEventListener("click", () => {
     state.profileEdit = true;
     state.profileMessage = "";
+    state.profileDraftGames = list(state.profile?.top_games);
     renderShell();
   });
   document.querySelector("[data-cancel-profile-edit]")?.addEventListener("click", () => {
     state.profileEdit = false;
     state.profileMessage = "";
+    state.profileDraftGames = null;
     renderShell();
   });
   document.querySelector("[data-save-profile]")?.addEventListener("submit", saveProfile);
+  document.querySelector("[data-add-game]")?.addEventListener("click", addTypedGame);
+  document.querySelectorAll("[data-pick-game]").forEach(button => button.addEventListener("click", () => addGame(button.dataset.pickGame)));
+  document.querySelectorAll("[data-remove-game]").forEach(button => button.addEventListener("click", () => removeGame(button.dataset.removeGame)));
   document.querySelector("[data-create-post]")?.addEventListener("submit", createPost);
   document.querySelectorAll("[data-like]").forEach(button => button.addEventListener("click", () => likePost(button.dataset.like)));
   document.querySelectorAll("[data-connect]").forEach(button => button.addEventListener("click", () => connectToPlayer(button.dataset.connect)));
@@ -624,6 +684,7 @@ async function signOut() {
   state.session = null;
   state.profile = null;
   state.profileEdit = false;
+  state.profileDraftGames = null;
   await loadData();
 }
 
@@ -632,6 +693,12 @@ async function saveProfile(event) {
   if (!state.profile) return alert("Sign in first.");
   const form = new FormData(event.currentTarget);
   const handle = cleanHandle(form.get("handle"));
+  const topGames = splitList(form.get("top_games"));
+  const gameRanks = {};
+  topGames.forEach(game => {
+    const rank = String(form.get(`rank_${gameKey(game)}`) || "").trim();
+    if (rank) gameRanks[game] = rank;
+  });
   const profile = {
     id: state.profile.id,
     display_name: String(form.get("display_name") || handle).trim() || handle,
@@ -639,13 +706,14 @@ async function saveProfile(event) {
     age: numberOrNull(form.get("age")),
     region: String(form.get("region") || "Australia").trim() || "Australia",
     timezone: String(form.get("timezone") || "AEST").trim() || "AEST",
-    rank: String(form.get("rank") || "Unranked").trim() || "Unranked",
+    rank: topGames.length ? gameRanks[topGames[0]] || "Unranked" : "Unranked",
     bio: String(form.get("bio") || "").trim(),
-    top_games: splitList(form.get("top_games")),
-    platforms: splitList(form.get("platforms")),
-    play_style: splitList(form.get("play_style")),
+    top_games: topGames,
+    platforms: [String(form.get("platform") || "PC")],
+    play_style: [String(form.get("play_style") || "Good Comms")],
     availability: { summary: String(form.get("availability") || "").trim() },
-    avatar_url: String(form.get("avatar_url") || "").trim() || null
+    avatar_url: String(form.get("avatar_url") || "").trim() || null,
+    stats: { ...(state.profile.stats || {}), gameRanks }
   };
   const { data, error } = await state.supabase.from("profiles").upsert(profile).select("*").single();
   if (error) return alert(error.message);
@@ -676,10 +744,45 @@ async function saveProfile(event) {
   if (linked.length) {
     await state.supabase.from("linked_accounts").upsert(linked, { onConflict: "profile_id,provider" });
   }
+  const emptyProviders = Object.entries(protectedInfo)
+    .filter(([, accountHandle]) => !accountHandle)
+    .map(([provider]) => provider);
+  if (emptyProviders.length) {
+    await state.supabase
+      .from("linked_accounts")
+      .delete()
+      .eq("profile_id", state.profile.id)
+      .in("provider", emptyProviders);
+  }
   state.profile = data;
   state.profileEdit = false;
+  state.profileDraftGames = null;
   state.profileMessage = "Profile saved.";
   await loadData();
+}
+
+function addTypedGame() {
+  const input = document.querySelector("[name='game_search']");
+  addGame(input?.value);
+}
+
+function addGame(value) {
+  const game = normalizeGameName(value);
+  if (!game) return;
+  const current = state.profileDraftGames ?? list(state.profile?.top_games);
+  state.profileDraftGames = [...new Set([...current, game])];
+  renderShell();
+}
+
+function removeGame(value) {
+  const game = normalizeGameName(value);
+  const current = state.profileDraftGames ?? list(state.profile?.top_games);
+  state.profileDraftGames = current.filter(item => item !== game);
+  renderShell();
+}
+
+function draftGames(profile) {
+  return state.profileDraftGames ?? list(profile.top_games);
 }
 
 async function createPost(event) {
@@ -850,6 +953,17 @@ function providerLabel(value) {
   return String(value || "")
     .replace(/_/g, " ")
     .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function normalizeGameName(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const match = popularGames.find(game => game.toLowerCase() === raw.toLowerCase());
+  return match || raw.replace(/\s+/g, " ").replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function gameKey(value) {
+  return String(value || "").replace(/[^a-z0-9]/gi, "_").toLowerCase();
 }
 
 function protectedInfoMap() {

@@ -268,6 +268,60 @@ button { cursor: pointer; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
+.game-rank-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 0;
+}
+.game-rank-row:last-child {
+  border-bottom: 0;
+}
+.game-rank-row > span:last-child {
+  color: var(--muted);
+  font-size: 13px;
+}
+.game-picker {
+  display: grid;
+  gap: 10px;
+}
+.game-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.popular-games, .selected-games {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.popular-games .pill {
+  cursor: pointer;
+}
+.selected-games {
+  display: grid;
+}
+.selected-game {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) minmax(180px, 1fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #08111f;
+}
+.selected-game label {
+  margin: 0;
+}
+.remove-game {
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+}
 .stat-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -437,6 +491,8 @@ button { cursor: pointer; }
   .profile-head { align-items: center; transform: translateY(-20px); }
   .profile-head h3 { font-size: 24px; }
   .profile-avatar { width: 68px; height: 68px; border-radius: 14px; font-size: 22px; }
+  .selected-game { grid-template-columns: auto minmax(0, 1fr); }
+  .selected-game label { grid-column: 1 / -1; }
   .editor-head { flex-direction: column; }
   .auth-layout, .auth-hero { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
