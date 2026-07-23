@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
+import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
@@ -52,6 +53,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().setStatusBarColor(Color.rgb(3, 7, 15));
+        getWindow().setNavigationBarColor(Color.rgb(3, 7, 15));
         setContentView(buildLayout());
         loadAll();
     }
@@ -60,6 +63,7 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
+        applySystemInsets(root);
 
         root.addView(buildHeader());
 
@@ -136,8 +140,18 @@ public class MainActivity extends Activity {
     private TextView navItem(String label, boolean active) {
         TextView item = text(label, 12, active ? PURPLE : MUTED, true);
         item.setGravity(Gravity.CENTER);
-        item.setText(active ? "• " + label : label);
+        item.setText(active ? "* " + label : label);
         return item;
+    }
+
+    private void applySystemInsets(View root) {
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            int top = insets.getSystemWindowInsetTop();
+            int bottom = insets.getSystemWindowInsetBottom();
+            view.setPadding(0, top, 0, bottom);
+            return insets;
+        });
+        root.post(root::requestApplyInsets);
     }
 
     private void login() {
