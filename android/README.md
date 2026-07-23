@@ -8,7 +8,9 @@ The project is a simple Java Android client for testing the Raspberry Pi backend
 - concept-inspired dark Gamer Connect UI
 - sign up and login controls on the Profile tab
 - backend status indicator
-- Discover tab with a reference-style featured player card, filters, pass/more/approve actions, and a Great Match panel
+- Feed tab for clips, posts, highlights, and squad updates
+- Discovery/LFG tab with a reference-style featured player card, filters, pass/more/approve actions, a Great Match panel, and LFG posts
+- Events/Servers tab for sessions, communities, and game hubs
 - Messages tab for matched players, groups, and starting new chats
 - protected Discord/platform info messaging
 - LFG posts

@@ -51,7 +51,7 @@ public class MainActivity extends Activity {
     private String apiBase = "http://10.0.2.2:8080";
     private String sessionToken = "";
     private String loggedInHandle = "Guest";
-    private String currentTab = "Discover";
+    private String currentTab = "Feed";
     private JSONObject latestHealth;
     private JSONArray latestPlayers;
     private JSONArray latestPosts;
@@ -133,9 +133,9 @@ public class MainActivity extends Activity {
 
     private void renderBottomNav() {
         navBar.removeAllViews();
-        addNavItem("Servers");
-        addNavItem("Events");
-        addNavItem("Discover");
+        addNavItem("Events/Servers");
+        addNavItem("Discovery/LFG");
+        addNavItem("Feed");
         addNavItem("Messages");
         addNavItem("Profile");
     }
@@ -273,18 +273,18 @@ public class MainActivity extends Activity {
             renderProfile();
             return;
         }
-        if ("Events".equals(currentTab)) {
-            renderEvents();
+        if ("Events/Servers".equals(currentTab)) {
+            renderEventsServers();
             return;
         }
-        if ("Servers".equals(currentTab)) {
-            renderServers();
+        if ("Discovery/LFG".equals(currentTab)) {
+            renderDiscoveryLfg();
             return;
         }
-        renderDiscover();
+        renderFeed();
     }
 
-    private void renderDiscover() {
+    private void renderDiscoveryLfg() {
         JSONArray players = latestPlayers;
         content.addView(buildHero());
         content.addView(filterChips());
@@ -297,6 +297,38 @@ public class MainActivity extends Activity {
             content.addView(playerCard(featured, 0));
             content.addView(matchPanel(featured));
         }
+
+        content.addView(section("Looking For Group", "Active parties you can jump into"));
+        for (int i = 0; latestPosts != null && i < latestPosts.length(); i++) {
+            JSONObject post = latestPosts.optJSONObject(i);
+            if (post != null) content.addView(lfgCard(post));
+        }
+    }
+
+    private void renderFeed() {
+        content.addView(section("Feed", "Clips, posts, highlights, and squad updates"));
+        content.addView(feedComposer());
+        content.addView(feedPost(
+                "NovaPulse",
+                "Ranked clutch from last night. Looking for two calm teammates for the next push.",
+                "Apex Legends",
+                "CLIP",
+                GREEN
+        ));
+        content.addView(feedPost(
+                "Weekend Warriors",
+                "Friday squad night is open. Bring comms, good vibes, and a warm-up game.",
+                "Group Post",
+                "EVENT",
+                PURPLE
+        ));
+        content.addView(feedPost(
+                "ZaneFPS",
+                "Entry routes I am testing this week. Drop your best retake setup.",
+                "VALORANT",
+                "POST",
+                GOLD
+        ));
     }
 
     private void renderMessages() {
@@ -365,16 +397,12 @@ public class MainActivity extends Activity {
         content.addView(messageCard("Seed Login", "Handle: NovaPulse\nPassword: testpass123", PURPLE));
     }
 
-    private void renderEvents() {
-        content.addView(section("Events", "Sessions and game nights"));
+    private void renderEventsServers() {
+        content.addView(section("Events/Servers", "Sessions, communities, and game hubs"));
         content.addView(messageCard("Tonight", "Ranked Apex testing window - 7PM to 11PM AEST", GREEN));
-        content.addView(messageCard("Coming Next", "Create event, RSVP, reminders, and squad invites will live here.", PURPLE));
-    }
-
-    private void renderServers() {
-        content.addView(section("Servers", "Communities connected to Gamer Connect"));
         content.addView(messageCard("Gamer Connect HQ", "Discord-style community hub for updates, feedback, and early testers.", PURPLE));
         content.addView(messageCard("Weekend Warriors", "Apex Legends squad server - voice preferred", GREEN));
+        content.addView(messageCard("Coming Next", "Create event, RSVP, reminders, server discovery, and squad invites will live here.", PURPLE));
     }
 
     private View chatCard(String title, String body, int accent) {
@@ -392,6 +420,68 @@ public class MainActivity extends Activity {
         row.addView(button("Chat", accent, v -> toast("Chat composer coming next")), new LinearLayout.LayoutParams(dp(88), dp(44)));
         card.addView(row);
         return card;
+    }
+
+    private View feedComposer() {
+        LinearLayout card = panel(PANEL, dp(14), dp(12));
+        card.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(avatar(loggedInHandle, 0), new LinearLayout.LayoutParams(dp(48), dp(48)));
+        TextView prompt = text(sessionToken.isEmpty() ? "Log in from Profile to post clips." : "Share a clip or squad update...", 14, MUTED, false);
+        prompt.setPadding(dp(12), 0, 0, 0);
+        row.addView(prompt, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(row);
+        LinearLayout actions = new LinearLayout(this);
+        actions.addView(button("Clip", PANEL_ALT, v -> toast("Clip upload coming next")), weighted());
+        actions.addView(button("Post", GREEN, v -> toast("Feed posting coming next")), weighted());
+        card.addView(actions);
+        return card;
+    }
+
+    private View feedPost(String author, String body, String game, String type, int accent) {
+        LinearLayout card = panel(PANEL, dp(14), dp(14));
+        card.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(avatar(author, author.length()), new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(12), 0, 0, 0);
+        copy.addView(text(author, 17, TEXT, true));
+        copy.addView(text(game + " - just now", 12, MUTED, false));
+        top.addView(copy, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        top.addView(chip(type, true));
+        card.addView(top);
+
+        if ("CLIP".equals(type)) {
+            card.addView(clipPreview(accent));
+        }
+        card.addView(text(body, 14, MUTED, false));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.addView(button("Like", PANEL_ALT, v -> toast("Liked")), weighted());
+        actions.addView(button("Comment", PANEL_ALT, v -> toast("Comments coming next")), weighted());
+        actions.addView(button("Share", accent, v -> toast("Share coming next")), weighted());
+        card.addView(actions);
+        return card;
+    }
+
+    private View clipPreview(int accent) {
+        LinearLayout preview = panel(Color.rgb(9, 18, 31), dp(12), dp(10));
+        preview.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.rgb(31, 48, 78), Color.rgb(7, 13, 23), accent}
+        );
+        bg.setCornerRadius(dp(8));
+        bg.setStroke(1, LINE);
+        preview.setBackground(bg);
+        preview.setMinimumHeight(dp(190));
+        preview.addView(centerText("PLAY CLIP", 24, TEXT, true), new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        preview.addView(text("0:27 highlight", 12, TEXT, true));
+        return preview;
     }
 
     private View buildHero() {
