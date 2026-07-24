@@ -711,6 +711,34 @@ button { cursor: pointer; }
   gap: 10px;
   align-items: center;
 }
+.upload-field {
+  display: grid;
+  gap: 8px;
+  border: 1px dashed rgba(161, 89, 255, .55);
+  border-radius: 10px;
+  padding: 14px;
+  color: var(--text);
+  background: rgba(8, 17, 31, .72);
+}
+.upload-field span {
+  font-weight: 800;
+}
+.upload-field input {
+  width: 100%;
+  color: var(--muted);
+}
+.upload-field input::file-selector-button {
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 12px;
+  margin-right: 10px;
+  color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #4c1d95);
+  font-weight: 800;
+}
+.upload-field small {
+  color: var(--muted);
+}
 .feed-card {
   display: grid;
   gap: 12px;

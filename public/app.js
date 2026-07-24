@@ -44,6 +44,9 @@ const accountPlatformOptions = [
   ["nintendo", "Nintendo"],
   ["epic", "Epic Games"]
 ];
+const feedMediaBucket = "feed-media";
+const maxFeedImageBytes = 5 * 1024 * 1024;
+const maxFeedVideoBytes = 50 * 1024 * 1024;
 const statSourceOptions = [
   ["ubisoft", "Ubisoft Connect"],
   ["ea", "EA / Origin"],
@@ -462,7 +465,11 @@ function renderComposer() {
       </div>
       <input class="field" name="title" placeholder="Give it a title" required>
       <textarea name="body" placeholder="What happened? Share a highlight, squad update, or callout..." required></textarea>
-      <input class="field" name="media_url" placeholder="Optional clip or image URL">
+      <label class="upload-field">
+        <span>Upload Image Or Clip</span>
+        <input name="media_file" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime">
+        <small>Images up to 5 MB. Clips up to 50 MB.</small>
+      </label>
       <div class="composer-controls">
         <select class="field" name="post_type">
           <option value="post">Post</option>
@@ -482,7 +489,7 @@ function renderComposer() {
 function renderFeedPost(post) {
   const author = profileFor(post.profile_id);
   const game = gameFor(post.game_id);
-  const isClip = post.post_type === "clip";
+  const isClip = post.media_type === "video" || post.post_type === "clip";
   const reactions = reactionsForPost(post.id);
   const comments = commentsForPost(post.id);
   const liked = reactions.some(reaction => reaction.profile_id === state.profile?.id);
@@ -1464,19 +1471,69 @@ async function createPost(event) {
   event.preventDefault();
   if (!state.profile) return alert("Sign in first.");
   const form = new FormData(event.currentTarget);
-  const mediaUrl = String(form.get("media_url") || "").trim();
+  const submitButton = event.currentTarget.querySelector("button[type='submit']");
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = "Publishing...";
+  }
+  const file = form.get("media_file");
+  const upload = await uploadFeedMedia(file && file.size > 0 ? file : null);
+  if (upload.error) {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = "Publish";
+    }
+    alert(upload.error);
+    return;
+  }
+  const postType = String(form.get("post_type") || "post");
   const { error } = await state.supabase.from("feed_posts").insert({
     profile_id: state.profile.id,
-    post_type: form.get("post_type"),
+    post_type: postType,
     title: form.get("title"),
     body: form.get("body"),
     game_id: form.get("game_id") || null,
-    media_url: mediaUrl || null,
-    media_type: mediaUrl ? (form.get("post_type") === "clip" ? "video" : "image") : null
+    media_url: upload.url,
+    media_type: upload.mediaType
   });
-  if (error) return alert(error.message);
+  if (error) {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = "Publish";
+    }
+    return alert(error.message);
+  }
   event.currentTarget.reset();
   await loadData();
+}
+
+async function uploadFeedMedia(file) {
+  if (!file) return { url: null, mediaType: null, error: "" };
+  const isImage = file.type.startsWith("image/");
+  const isVideo = file.type.startsWith("video/");
+  if (!isImage && !isVideo) return { url: null, mediaType: null, error: "Upload an image or video file." };
+  if (isImage && file.size > maxFeedImageBytes) return { url: null, mediaType: null, error: "Images need to be 5 MB or smaller for now." };
+  if (isVideo && file.size > maxFeedVideoBytes) return { url: null, mediaType: null, error: "Clips need to be 50 MB or smaller for now." };
+
+  const extension = file.name.includes(".") ? file.name.split(".").pop().toLowerCase().replace(/[^a-z0-9]/g, "") : (isVideo ? "mp4" : "jpg");
+  const uniquePart = window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const path = `${state.profile.id}/${Date.now()}-${uniquePart}.${extension}`;
+  const { error } = await state.supabase.storage
+    .from(feedMediaBucket)
+    .upload(path, file, {
+      cacheControl: "3600",
+      contentType: file.type,
+      upsert: false
+    });
+  if (error) {
+    return {
+      url: null,
+      mediaType: null,
+      error: `${error.message}\n\nIf this mentions bucket or row-level security, run supabase/migrations/0012_feed_media_storage.sql in Supabase SQL Editor.`
+    };
+  }
+  const { data } = state.supabase.storage.from(feedMediaBucket).getPublicUrl(path);
+  return { url: data.publicUrl, mediaType: isVideo ? "video" : "image", error: "" };
 }
 
 async function likePost(postId) {
