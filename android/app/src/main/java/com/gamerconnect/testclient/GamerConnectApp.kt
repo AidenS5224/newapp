@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.gamerconnect.testclient.feature.feed.FeedScreen
 import com.gamerconnect.testclient.feature.discovery.DiscoveryScreen
 import com.gamerconnect.testclient.feature.messages.MessagesScreen
-
+import com.gamerconnect.testclient.feature.profile.ProfileScreen
 
 private data class AppTab(
     val title: String,
@@ -91,6 +91,10 @@ fun GamerConnectApp() {
             )
 
             3 -> MessagesScreen(
+                modifier = Modifier.padding(innerPadding)
+            )
+
+            4 -> ProfileScreen(
                 modifier = Modifier.padding(innerPadding)
             )
 
