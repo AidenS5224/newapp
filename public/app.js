@@ -82,6 +82,7 @@ const state = {
   selectedConversationId: "",
   profilePanelOpen: false,
   newChatOpen: false,
+  messagesMobileView: "list",
   discoveryTab: "lfg",
   discoveryStarted: false,
   discoveryIndex: 0,
@@ -360,7 +361,7 @@ async function loadPrivateProfile() {
 
 function renderShell() {
   app.innerHTML = `
-    <div class="app-shell">
+    <div class="app-shell ${state.tab === "messages" ? "messages-app" : ""}">
       <aside class="sidebar">
         <div class="brand">
           <div class="mark">GC</div>
@@ -820,7 +821,7 @@ function renderMessages() {
   const profilePanelVisible = Boolean(!state.newChatOpen && state.profilePanelOpen && selectedProfile);
   return page("Messages", "Matched players, direct chats, and group conversations.", `
     ${state.session ? `
-      <div class="message-page-wrap ${state.newChatOpen ? "new-chat-open" : ""}">
+      <div class="message-page-wrap ${state.newChatOpen ? "new-chat-open" : ""} mobile-${escapeAttribute(state.messagesMobileView || "list")}">
         <div class="messages-shell ${profilePanelVisible ? "profile-open" : ""} ${state.newChatOpen ? "compose-open" : ""}">
           <aside class="messages-side">
             <div class="messages-list-panel">
@@ -995,6 +996,7 @@ function renderChatThread(conversation) {
     <div class="chat-thread">
       <div class="chat-head">
         <button class="chat-title-wrap" type="button" data-toggle-chat-profile>
+          <span class="mobile-chat-back" data-messages-list>&lt;</span>
           <span class="chat-avatar lg">${renderAvatar(other || participants[0], title)}</span>
           <div>
             <h3>${escapeHtml(title)}</h3>
@@ -1397,6 +1399,7 @@ function bindPageEvents() {
   document.querySelectorAll("[data-block]").forEach(button => button.addEventListener("click", () => blockPlayer(button.dataset.block)));
   document.querySelectorAll("[data-unblock]").forEach(button => button.addEventListener("click", () => unblockPlayer(button.dataset.unblock)));
   document.querySelectorAll("[data-select-conversation]").forEach(button => button.addEventListener("click", () => selectConversation(button.dataset.selectConversation)));
+  document.querySelectorAll("[data-messages-list]").forEach(button => button.addEventListener("click", showMessagesList));
   document.querySelectorAll("[data-toggle-chat-profile]").forEach(button => button.addEventListener("click", toggleChatProfile));
   document.querySelectorAll("[data-delete-conversation]").forEach(button => button.addEventListener("click", () => deleteConversation(button.dataset.deleteConversation)));
   document.querySelectorAll("[data-focus-new-chat]").forEach(button => button.addEventListener("click", toggleNewChat));
@@ -2137,6 +2140,8 @@ function removeOptimisticMessage(conversationId, messageId) {
 function selectConversation(conversationId) {
   state.selectedConversationId = conversationId;
   state.profilePanelOpen = false;
+  state.newChatOpen = false;
+  state.messagesMobileView = "chat";
   renderShell();
 }
 
@@ -2147,13 +2152,27 @@ function toggleChatProfile() {
 
 function toggleNewChat() {
   state.newChatOpen = !state.newChatOpen;
-  if (state.newChatOpen) state.profilePanelOpen = false;
+  if (state.newChatOpen) {
+    state.profilePanelOpen = false;
+    state.messagesMobileView = "new";
+  } else {
+    state.messagesMobileView = "list";
+  }
   renderShell();
   focusNewChatInput();
 }
 
 function closeNewChat() {
   state.newChatOpen = false;
+  state.messagesMobileView = "list";
+  renderShell();
+}
+
+function showMessagesList(event) {
+  event?.stopPropagation();
+  state.profilePanelOpen = false;
+  state.newChatOpen = false;
+  state.messagesMobileView = "list";
   renderShell();
 }
 
