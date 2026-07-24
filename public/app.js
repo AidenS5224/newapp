@@ -459,6 +459,7 @@ function renderComposer() {
   if (!state.session) {
     return `<div class="card notice"><h3>Sign in to post</h3><p>Create clips, posts, and event updates from your Profile tab.</p></div>`;
   }
+  const gameOptions = profileFeedGameOptions();
   return `
     <form class="card composer feed-composer" data-create-post>
       <div class="composer-head">
@@ -483,8 +484,9 @@ function renderComposer() {
         </select>
         <select class="field" name="game_id">
           <option value="">No game</option>
-          ${state.games.map(game => `<option value="${escapeAttribute(game.id)}">${escapeHtml(game.name)}</option>`).join("")}
+          ${gameOptions.map(game => `<option value="${escapeAttribute(game.id)}">${escapeHtml(game.name)}</option>`).join("")}
         </select>
+        ${gameOptions.length ? "" : `<p class="composer-hint">Add games on your Profile to tag feed posts.</p>`}
         <button class="button green" type="submit">Publish</button>
       </div>
     </form>
@@ -2008,6 +2010,27 @@ function reactionsForPost(postId) {
 
 function commentsForPost(postId) {
   return state.feedComments.filter(comment => comment.post_id === postId);
+}
+
+function profileFeedGameOptions() {
+  const selectedGames = list(state.profile?.top_games);
+  const seen = new Set();
+  return selectedGames.map(value => gameForProfileValue(value)).filter(Boolean).filter(game => {
+    if (seen.has(game.id)) return false;
+    seen.add(game.id);
+    return true;
+  });
+}
+
+function gameForProfileValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const rawKey = normalizeGameLookup(raw);
+  return state.games.find(game => game.id === raw || normalizeGameLookup(game.id) === rawKey || normalizeGameLookup(game.name) === rawKey) || null;
+}
+
+function normalizeGameLookup(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
 function visibleConversations() {
