@@ -47,6 +47,11 @@ const accountPlatformOptions = [
 const feedMediaBucket = "feed-media";
 const maxFeedImageBytes = 5 * 1024 * 1024;
 const maxFeedVideoBytes = 50 * 1024 * 1024;
+const maxFeedVideoSourceBytes = 250 * 1024 * 1024;
+const maxFeedVideoDurationSeconds = 60;
+const compressedFeedVideoBitrate = 5_000_000;
+const compressedFeedVideoFps = 30;
+const compressedFeedVideoMaxEdge = 1280;
 const statSourceOptions = [
   ["ubisoft", "Ubisoft Connect"],
   ["ea", "EA / Origin"],
@@ -468,7 +473,7 @@ function renderComposer() {
       <label class="upload-field">
         <span>Upload Image Or Clip</span>
         <input name="media_file" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime">
-        <small>Images up to 5 MB. Clips up to 50 MB.</small>
+        <small>Images up to 5 MB. Clips up to 60 seconds. Oversized clips will try to compress to 720p/30fps before upload.</small>
       </label>
       <div class="composer-controls">
         <select class="field" name="post_type">
@@ -1513,16 +1518,34 @@ async function uploadFeedMedia(file) {
   const isVideo = file.type.startsWith("video/");
   if (!isImage && !isVideo) return { url: null, mediaType: null, error: "Upload an image or video file." };
   if (isImage && file.size > maxFeedImageBytes) return { url: null, mediaType: null, error: "Images need to be 5 MB or smaller for now." };
-  if (isVideo && file.size > maxFeedVideoBytes) return { url: null, mediaType: null, error: "Clips need to be 50 MB or smaller for now." };
+  let uploadFile = file;
+  if (isVideo) {
+    if (file.size > maxFeedVideoSourceBytes) {
+      return { url: null, mediaType: null, error: "That clip is too large to compress in the browser. Try a file under 250 MB." };
+    }
+    const metadata = await readVideoMetadata(file);
+    if (metadata.error) return { url: null, mediaType: null, error: metadata.error };
+    if (metadata.duration > maxFeedVideoDurationSeconds + 0.5) {
+      return { url: null, mediaType: null, error: "Clips need to be 60 seconds or shorter for now." };
+    }
+    if (file.size > maxFeedVideoBytes) {
+      const compressed = await compressFeedVideo(file, metadata);
+      if (compressed.error) return { url: null, mediaType: null, error: compressed.error };
+      uploadFile = compressed.file;
+    }
+    if (uploadFile.size > maxFeedVideoBytes) {
+      return { url: null, mediaType: null, error: "The compressed clip is still over 50 MB. Trim it slightly or lower the source quality." };
+    }
+  }
 
-  const extension = file.name.includes(".") ? file.name.split(".").pop().toLowerCase().replace(/[^a-z0-9]/g, "") : (isVideo ? "mp4" : "jpg");
+  const extension = uploadFile.name.includes(".") ? uploadFile.name.split(".").pop().toLowerCase().replace(/[^a-z0-9]/g, "") : (isVideo ? "webm" : "jpg");
   const uniquePart = window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const path = `${state.profile.id}/${Date.now()}-${uniquePart}.${extension}`;
   const { error } = await state.supabase.storage
     .from(feedMediaBucket)
-    .upload(path, file, {
+    .upload(path, uploadFile, {
       cacheControl: "3600",
-      contentType: file.type,
+      contentType: uploadFile.type,
       upsert: false
     });
   if (error) {
@@ -1534,6 +1557,117 @@ async function uploadFeedMedia(file) {
   }
   const { data } = state.supabase.storage.from(feedMediaBucket).getPublicUrl(path);
   return { url: data.publicUrl, mediaType: isVideo ? "video" : "image", error: "" };
+}
+
+function readVideoMetadata(file) {
+  return new Promise(resolve => {
+    const video = document.createElement("video");
+    const url = URL.createObjectURL(file);
+    const cleanup = () => URL.revokeObjectURL(url);
+    video.preload = "metadata";
+    video.muted = true;
+    video.onloadedmetadata = () => {
+      const metadata = {
+        duration: Number.isFinite(video.duration) ? video.duration : 0,
+        width: video.videoWidth || 1280,
+        height: video.videoHeight || 720,
+        error: ""
+      };
+      cleanup();
+      resolve(metadata);
+    };
+    video.onerror = () => {
+      cleanup();
+      resolve({ duration: 0, width: 0, height: 0, error: "Could not read that video file." });
+    };
+    video.src = url;
+  });
+}
+
+function compressedVideoDimensions(width, height) {
+  const maxSide = Math.max(width, height);
+  if (maxSide <= compressedFeedVideoMaxEdge) return { width, height };
+  const scale = compressedFeedVideoMaxEdge / maxSide;
+  return {
+    width: Math.max(2, Math.round(width * scale / 2) * 2),
+    height: Math.max(2, Math.round(height * scale / 2) * 2)
+  };
+}
+
+async function compressFeedVideo(file, metadata) {
+  if (!window.MediaRecorder) {
+    return { file: null, error: "This browser cannot compress video yet. Try uploading a clip under 50 MB." };
+  }
+  const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+    ? "video/webm;codecs=vp9"
+    : MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
+      ? "video/webm;codecs=vp8"
+      : "video/webm";
+  if (!MediaRecorder.isTypeSupported(mimeType)) {
+    return { file: null, error: "This browser cannot create compressed WebM clips. Try a clip under 50 MB." };
+  }
+
+  const video = document.createElement("video");
+  const canvas = document.createElement("canvas");
+  const sourceUrl = URL.createObjectURL(file);
+  const dimensions = compressedVideoDimensions(metadata.width, metadata.height);
+  canvas.width = dimensions.width;
+  canvas.height = dimensions.height;
+  video.src = sourceUrl;
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+
+  try {
+    await once(video, "loadeddata");
+    const context = canvas.getContext("2d");
+    const stream = canvas.captureStream(compressedFeedVideoFps);
+    const sourceStream = video.captureStream ? video.captureStream() : null;
+    sourceStream?.getAudioTracks().forEach(track => stream.addTrack(track));
+    const recorder = new MediaRecorder(stream, {
+      mimeType,
+      videoBitsPerSecond: compressedFeedVideoBitrate
+    });
+    const chunks = [];
+    recorder.ondataavailable = event => {
+      if (event.data?.size) chunks.push(event.data);
+    };
+
+    const done = once(recorder, "stop");
+    const drawFrame = () => {
+      if (video.paused || video.ended) return;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      window.requestAnimationFrame(drawFrame);
+    };
+    recorder.start(1000);
+    await video.play();
+    drawFrame();
+    await once(video, "ended");
+    recorder.stop();
+    await done;
+
+    const blob = new Blob(chunks, { type: "video/webm" });
+    return {
+      file: new File([blob], replaceFileExtension(file.name, "webm"), { type: "video/webm" }),
+      error: ""
+    };
+  } catch (_error) {
+    return { file: null, error: "Could not compress that clip in the browser. Try a clip under 50 MB." };
+  } finally {
+    URL.revokeObjectURL(sourceUrl);
+  }
+}
+
+function once(target, eventName) {
+  return new Promise((resolve, reject) => {
+    target.addEventListener(eventName, resolve, { once: true });
+    target.addEventListener("error", reject, { once: true });
+  });
+}
+
+function replaceFileExtension(name, extension) {
+  const baseName = name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name;
+  return `${baseName || "clip"}.${extension}`;
 }
 
 async function likePost(postId) {
