@@ -72,6 +72,7 @@ const state = {
   trackerMessage: "",
   profileDraftGames: null,
   selectedConversationId: "",
+  profilePanelOpen: false,
   newChatOpen: false,
   ready: false,
   config: null,
@@ -531,6 +532,7 @@ function renderMessages() {
   const conversations = visibleConversations();
   const selectedConversation = selectedConversationFrom(conversations);
   const selectedProfile = selectedConversation ? selectedConversationProfile(selectedConversation) : null;
+  const profilePanelVisible = Boolean(state.profilePanelOpen && selectedProfile);
   return page("Messages", "Matched players, direct chats, and group conversations.", `
     ${state.session ? `
       <div class="message-page-wrap">
@@ -538,7 +540,7 @@ function renderMessages() {
           <button class="button" type="button" data-focus-new-chat>${state.newChatOpen ? "Close New Chat" : "New Chat"}</button>
         </div>
         ${state.newChatOpen ? renderNewChatPopover(accepted) : ""}
-        <div class="messages-shell">
+        <div class="messages-shell ${profilePanelVisible ? "profile-open" : ""}">
           <aside class="messages-side">
             <div class="messages-list-panel">
               <div class="messages-list-head">
@@ -566,9 +568,11 @@ function renderMessages() {
           <section class="chat-panel">
             ${selectedConversation ? renderChatThread(selectedConversation) : `<div class="empty">Create a chat or select a conversation.</div>`}
           </section>
-          <aside class="chat-profile-panel">
-            ${selectedProfile ? renderChatProfilePanel(selectedProfile, selectedConversation) : renderNewChatAside(accepted)}
-          </aside>
+          ${profilePanelVisible ? `
+            <aside class="chat-profile-panel">
+              ${renderChatProfilePanel(selectedProfile, selectedConversation)}
+            </aside>
+          ` : ""}
         </div>
       </div>
     ` : `<div class="card notice"><h3>Sign in required</h3><p>Messages need a Supabase account.</p></div>`}
@@ -695,17 +699,17 @@ function renderChatThread(conversation) {
   return `
     <div class="chat-thread">
       <div class="chat-head">
-        <div class="chat-title-wrap">
+        <button class="chat-title-wrap" type="button" data-toggle-chat-profile>
           <span class="chat-avatar lg">${renderAvatar(other || participants[0], title)}</span>
           <div>
             <h3>${escapeHtml(title)}</h3>
             <p>${other ? `${escapeHtml(other.online ? "Online" : "Online soon")} - ${escapeHtml(other.rank || "Unranked")}` : `${participants.length} participant(s)`}</p>
           </div>
-        </div>
+        </button>
         <div class="chat-actions">
           <button class="icon-button" title="Video" type="button">Vid</button>
           <button class="icon-button" title="Call" type="button">Call</button>
-          <button class="icon-button" title="Info" type="button">Info</button>
+          <button class="icon-button" title="Info" type="button" data-toggle-chat-profile>Info</button>
           <button class="icon-button danger" title="Delete conversation" type="button" data-delete-conversation="${conversation.id}">Del</button>
         </div>
       </div>
@@ -753,6 +757,7 @@ function renderChatProfilePanel(profile, conversation) {
   const gameRanks = stats.gameRanks || {};
   return `
     <div class="chat-profile-card">
+      <button class="icon-button profile-panel-close" title="Close profile" type="button" data-toggle-chat-profile>x</button>
       <div class="profile-cover"></div>
       <div class="profile-summary">
         <span class="chat-avatar xl">${renderAvatar(profile, profile.handle)}</span>
@@ -1082,6 +1087,7 @@ function bindPageEvents() {
   document.querySelectorAll("[data-block]").forEach(button => button.addEventListener("click", () => blockPlayer(button.dataset.block)));
   document.querySelectorAll("[data-unblock]").forEach(button => button.addEventListener("click", () => unblockPlayer(button.dataset.unblock)));
   document.querySelectorAll("[data-select-conversation]").forEach(button => button.addEventListener("click", () => selectConversation(button.dataset.selectConversation)));
+  document.querySelectorAll("[data-toggle-chat-profile]").forEach(button => button.addEventListener("click", toggleChatProfile));
   document.querySelectorAll("[data-delete-conversation]").forEach(button => button.addEventListener("click", () => deleteConversation(button.dataset.deleteConversation)));
   document.querySelectorAll("[data-focus-new-chat]").forEach(button => button.addEventListener("click", toggleNewChat));
   document.querySelector("[data-close-new-chat]")?.addEventListener("click", closeNewChat);
@@ -1578,11 +1584,18 @@ function removeOptimisticMessage(conversationId, messageId) {
 
 function selectConversation(conversationId) {
   state.selectedConversationId = conversationId;
+  state.profilePanelOpen = false;
+  renderShell();
+}
+
+function toggleChatProfile() {
+  state.profilePanelOpen = !state.profilePanelOpen;
   renderShell();
 }
 
 function toggleNewChat() {
   state.newChatOpen = !state.newChatOpen;
+  if (state.newChatOpen) state.profilePanelOpen = false;
   renderShell();
   focusNewChatInput();
 }

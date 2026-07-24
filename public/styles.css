@@ -87,7 +87,7 @@ button { cursor: pointer; }
 .session-card span { color: var(--muted); font-size: 12px; }
 .main {
   padding: 24px;
-  max-width: 1320px;
+  max-width: none;
   width: 100%;
 }
 .topbar {
@@ -266,13 +266,18 @@ button { cursor: pointer; }
 }
 .messages-shell {
   display: grid;
-  grid-template-columns: 360px minmax(430px, 1fr) 360px;
+  grid-template-columns: clamp(280px, 24vw, 380px) minmax(0, 1fr);
   gap: 14px;
   align-items: stretch;
-  margin-bottom: 14px;
+  min-height: clamp(560px, calc(100vh - 146px), 920px);
+  margin-bottom: 0;
+}
+.messages-shell.profile-open {
+  grid-template-columns: clamp(280px, 22vw, 360px) minmax(0, 1fr) clamp(280px, 24vw, 380px);
 }
 .message-page-wrap {
   position: relative;
+  min-height: calc(100vh - 96px);
 }
 .messages-toolbar {
   display: flex;
@@ -316,7 +321,7 @@ button { cursor: pointer; }
 }
 .messages-side {
   display: grid;
-  min-height: 720px;
+  min-height: 0;
 }
 .messages-list-panel,
 .chat-thread,
@@ -334,6 +339,7 @@ button { cursor: pointer; }
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   padding: 18px;
+  min-height: 0;
 }
 .messages-list-head {
   display: flex;
@@ -413,6 +419,8 @@ button { cursor: pointer; }
 .conversation-list {
   display: grid;
   align-content: start;
+  overflow-y: auto;
+  min-height: 0;
 }
 .conversation-item {
   display: grid;
@@ -486,12 +494,13 @@ button { cursor: pointer; }
   color: var(--muted);
 }
 .chat-panel {
-  min-height: 720px;
+  min-height: 0;
 }
 .chat-thread {
   display: grid;
-  grid-template-rows: auto minmax(420px, 1fr) auto;
-  min-height: 720px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  height: 100%;
 }
 .chat-head {
   display: flex;
@@ -505,6 +514,12 @@ button { cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
 }
 .chat-head h3 {
   margin: 0 0 4px;
@@ -517,6 +532,8 @@ button { cursor: pointer; }
 .chat-actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .message-list {
   display: flex;
@@ -563,11 +580,22 @@ button { cursor: pointer; }
   border-radius: 10px;
 }
 .chat-profile-panel {
-  min-height: 720px;
+  min-height: 0;
 }
 .chat-profile-card,
 .side-profile-empty {
-  min-height: 720px;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+.chat-profile-card {
+  position: relative;
+}
+.profile-panel-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
 }
 .profile-cover {
   height: 126px;
@@ -1008,13 +1036,17 @@ button { cursor: pointer; }
 
 @media (max-width: 1180px) {
   .messages-shell {
-    grid-template-columns: minmax(280px, .85fr) minmax(0, 1.15fr);
+    grid-template-columns: clamp(260px, 34vw, 340px) minmax(0, 1fr);
   }
   .chat-profile-panel {
-    display: none;
-  }
-  .messages-utility-grid {
-    grid-template-columns: 1fr 1fr;
+    position: absolute;
+    top: 60px;
+    right: 0;
+    bottom: 0;
+    z-index: 18;
+    width: min(360px, calc(100% - 24px));
+    min-height: 0;
+    box-shadow: -24px 0 55px rgba(0, 0, 0, .42);
   }
 }
 
@@ -1056,10 +1088,29 @@ button { cursor: pointer; }
     width: 100%;
     margin-bottom: 12px;
   }
-  .messages-shell, .messages-utility-grid { grid-template-columns: 1fr; }
+  .messages-shell, .messages-shell.profile-open, .messages-utility-grid {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
   .messages-side, .chat-panel { min-height: auto; }
   .messages-list-panel { min-height: 420px; }
   .chat-thread { min-height: 460px; }
   .message-compose { grid-template-columns: 1fr; }
   .message-bubble { max-width: 100%; }
+  .chat-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .chat-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .chat-actions .icon-button {
+    flex: 1;
+  }
+  .chat-profile-panel {
+    position: static;
+    width: 100%;
+    margin-top: 12px;
+  }
 }
