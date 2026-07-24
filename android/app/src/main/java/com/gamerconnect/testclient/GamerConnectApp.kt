@@ -23,8 +23,11 @@ import com.gamerconnect.testclient.feature.messages.MessagesScreen
 import com.gamerconnect.testclient.feature.profile.ProfileScreen
 import com.gamerconnect.testclient.navigation.AppDestination
 
+
 @Composable
-fun GamerConnectApp() {
+fun GamerConnectApp(
+    onSignOut: () -> Unit
+) {
     val navController = rememberNavController()
     val destinations = AppDestination.bottomNavigationItems
     val currentBackStackEntry = navController.currentBackStackEntryAsState().value
@@ -97,7 +100,9 @@ fun GamerConnectApp() {
             }
 
             composable(AppDestination.Profile.route) {
-                ProfileScreen()
+                ProfileScreen(
+                    onSignOut = onSignOut
+                )
             }
         }
     }

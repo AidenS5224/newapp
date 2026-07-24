@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun ProfileScreen(
+    onSignOut: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -41,7 +42,9 @@ fun ProfileScreen(
             fontWeight = FontWeight.Bold
         )
 
-        ProfileHeader()
+        ProfileHeader(
+            onSignOut = onSignOut
+        )
 
         ProfileSection(
             title = "About",
@@ -61,7 +64,9 @@ fun ProfileScreen(
 }
 
 @Composable
-private fun ProfileHeader() {
+private fun ProfileHeader(
+    onSignOut: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -120,6 +125,17 @@ private fun ProfileHeader() {
                 Text(
                     text = "Edit Profile",
                     color = Color.White
+                )
+            }
+            Button(
+                onClick = onSignOut,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF2A0F1A)
+                )
+            ) {
+                Text(
+                    text = "Sign Out",
+                    color = Color(0xFFFF8A8A)
                 )
             }
         }
