@@ -434,17 +434,22 @@ function renderFeed() {
   return page("Feed", "Clips, posts, highlights, and squad updates.", `
     <div class="feed-layout">
       <section class="feed-main">
+        <div class="feed-tabs">
+          <button class="active" type="button">For You</button>
+          <button type="button">Following</button>
+          <button type="button">Groups</button>
+        </div>
         ${renderComposer()}
         <div class="feed-list">
           ${state.feed.length ? state.feed.map(renderFeedPost).join("") : `<div class="empty">No posts yet. Sign in and create the first clip or squad update.</div>`}
         </div>
       </section>
       <aside class="feed-side">
-        <div class="card">
+        <div class="card feed-side-card">
           <h3>Trending Games</h3>
           ${popularGames.slice(0, 6).map(game => `<span class="pill">${escapeHtml(game)}</span>`).join("")}
         </div>
-        <div class="card">
+        <div class="card feed-side-card">
           <h3>Feed Signals</h3>
           <p>${state.feed.length} post(s)</p>
           <p>${state.feedComments.length} comment(s)</p>
@@ -465,9 +470,10 @@ function renderComposer() {
       <div class="composer-head">
         <span class="chat-avatar">${renderAvatar(state.profile, state.profile?.handle)}</span>
         <div>
-          <h3>Share With The Feed</h3>
-          <p>Post clips, squad updates, and game moments.</p>
+          <h3>New Post</h3>
+          <p>Clip, text, or squad update.</p>
         </div>
+        <span class="pill hot">Feed</span>
       </div>
       <input class="field" name="title" placeholder="Give it a title" required>
       <textarea name="body" placeholder="What happened? Share a highlight, squad update, or callout..." required></textarea>
@@ -487,7 +493,7 @@ function renderComposer() {
           ${gameOptions.map(game => `<option value="${escapeAttribute(game.id)}">${escapeHtml(game.name)}</option>`).join("")}
         </select>
         ${gameOptions.length ? `<p class="composer-hint">Showing games selected on your Profile.</p>` : `<p class="composer-hint">Add games on your Profile to tag feed posts. If you already have games selected, run migration 0013 to seed the games table.</p>`}
-        <button class="button green" type="submit">Publish</button>
+        <button class="button purple" type="submit">Post</button>
       </div>
     </form>
   `;
@@ -501,27 +507,26 @@ function renderFeedPost(post) {
   const comments = commentsForPost(post.id);
   const liked = reactions.some(reaction => reaction.profile_id === state.profile?.id);
   const canDelete = post.profile_id === state.profile?.id;
+  const tags = [game?.name, post.post_type && post.post_type !== "post" ? post.post_type : ""].filter(Boolean);
   return `
     <article class="card feed-card" id="feed-${escapeAttribute(post.id)}">
       <div class="feed-author">
         <span class="chat-avatar">${renderAvatar(author, author?.handle || "Player")}</span>
         <div>
           <strong>${escapeHtml(author?.handle || "Player")}</strong>
-          <p>${game ? `${escapeHtml(game.name)} - ` : ""}${escapeHtml(formatRelativeTime(post.created_at))}</p>
+          <p>${escapeHtml(formatRelativeTime(post.created_at))}${game ? ` - ${escapeHtml(game.name)}` : ""}</p>
         </div>
-        <span class="pill hot">${escapeHtml(post.post_type || "post")}</span>
+        <button class="post-menu" type="button" title="More">...</button>
       </div>
       <h3>${escapeHtml(post.title)}</h3>
       <p>${escapeHtml(post.body)}</p>
+      ${tags.length ? `<div class="feed-tags">${tags.map(tag => `<span>#${escapeHtml(tag.replace(/\s+/g, ""))}</span>`).join("")}</div>` : ""}
       ${post.media_url ? renderFeedMedia(post, isClip) : ""}
-      <div class="feed-metrics">
-        <span>${reactions.length} like(s)</span>
-        <span>${comments.length} comment(s)</span>
-      </div>
       <div class="feed-actions">
-        <button class="button ${liked ? "purple" : "dark"}" data-like="${post.id}">${liked ? "Liked" : "Like"}</button>
-        <button class="button dark" data-comment-jump="${post.id}">Comment</button>
-        <button class="button dark" data-share="${post.id}">Share</button>
+        <button class="feed-action ${liked ? "active" : ""}" data-like="${post.id}"><span>Like</span>${reactions.length}</button>
+        <button class="feed-action" data-comment-jump="${post.id}"><span>Comment</span>${comments.length}</button>
+        <button class="feed-action" data-share="${post.id}"><span>Share</span></button>
+        <button class="feed-action save" type="button"><span>Save</span></button>
         ${canDelete ? `<button class="button red" data-delete-post="${post.id}">Delete</button>` : ""}
       </div>
       <div class="comment-list" id="comments-${post.id}">
@@ -543,6 +548,7 @@ function renderFeedMedia(post, isClip) {
     return `
       <div class="media clip-media">
         <video controls preload="metadata" src="${url}"></video>
+        <span class="clip-badge">Clip</span>
       </div>
     `;
   }

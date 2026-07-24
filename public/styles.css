@@ -667,26 +667,50 @@ button { cursor: pointer; }
 }
 .feed-layout {
   display: grid;
-  grid-template-columns: minmax(0, 760px) minmax(260px, 320px);
+  grid-template-columns: minmax(0, 720px) minmax(260px, 320px);
   gap: 18px;
   align-items: start;
+  max-width: 1080px;
 }
 .feed-main,
 .feed-list,
 .feed-side {
   display: grid;
-  gap: 14px;
+  gap: 12px;
+}
+.feed-tabs {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.feed-tabs button {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 9px 18px;
+  color: var(--text);
+  background: transparent;
+}
+.feed-tabs button.active {
+  background: linear-gradient(135deg, #7c3aed, #4c1d95);
 }
 .feed-side {
   position: sticky;
   top: 24px;
 }
+.feed-side-card {
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(161, 89, 255, .08), transparent 32%),
+    rgba(14, 24, 40, .82);
+}
 .feed-composer {
   display: grid;
   gap: 12px;
+  border-radius: 12px;
+  padding: 16px;
   background:
-    radial-gradient(circle at 100% 0%, rgba(161, 89, 255, .12), transparent 36%),
-    var(--panel);
+    radial-gradient(circle at 100% 0%, rgba(124, 58, 237, .2), transparent 34%),
+    linear-gradient(180deg, rgba(16, 28, 47, .9), rgba(8, 15, 28, .96));
 }
 .composer-head,
 .feed-author,
@@ -700,6 +724,10 @@ button { cursor: pointer; }
 .feed-author p,
 .feed-comment p {
   margin: 0;
+}
+.composer-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 .composer-head p,
 .feed-author p {
@@ -720,11 +748,11 @@ button { cursor: pointer; }
 .upload-field {
   display: grid;
   gap: 8px;
-  border: 1px dashed rgba(161, 89, 255, .55);
+  border: 1px dashed rgba(161, 89, 255, .45);
   border-radius: 10px;
-  padding: 14px;
+  padding: 12px;
   color: var(--text);
-  background: rgba(8, 17, 31, .72);
+  background: rgba(8, 17, 31, .66);
 }
 .upload-field span {
   font-weight: 800;
@@ -747,56 +775,98 @@ button { cursor: pointer; }
 }
 .feed-card {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  border-color: rgba(38, 50, 68, .74);
   border-radius: 12px;
   padding: 18px;
   background:
-    radial-gradient(circle at 0% 0%, rgba(52, 211, 115, .06), transparent 26%),
-    linear-gradient(180deg, rgba(17, 30, 48, .94), rgba(8, 15, 28, .96));
+    radial-gradient(circle at 0% 0%, rgba(161, 89, 255, .09), transparent 28%),
+    linear-gradient(180deg, rgba(11, 20, 34, .96), rgba(5, 9, 18, .98));
 }
 .feed-author {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
 }
 .feed-card h3 {
-  margin: 0;
-  font-size: 22px;
+  margin: 4px 0 0;
+  font-size: 18px;
 }
 .feed-card > p {
   margin: 0;
   color: #d8e2f3;
   line-height: 1.55;
 }
+.post-menu {
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font-size: 18px;
+  letter-spacing: 2px;
+}
+.feed-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--purple);
+  font-weight: 800;
+}
 .feed-card .media {
+  position: relative;
   min-height: 220px;
   display: grid;
   place-items: center;
-  margin: 12px 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: linear-gradient(135deg, #1c304e, #050912 54%, #5c2c8a);
+  overflow: hidden;
+  margin: 6px 0;
+  border: 1px solid rgba(81, 99, 126, .7);
+  border-radius: 12px;
+  background: #03070f;
   font-weight: 900;
 }
 .clip-media video,
 .feed-image {
   width: 100%;
-  max-height: 420px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  max-height: 460px;
+  border: 0;
+  border-radius: 12px;
   object-fit: cover;
   background: #03070f;
 }
-.feed-metrics,
+.clip-badge {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #fff;
+  background: rgba(3, 7, 15, .78);
+  font-size: 12px;
+}
 .feed-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 8px;
   align-items: center;
 }
-.feed-metrics {
-  justify-content: space-between;
+.feed-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
   color: var(--muted);
-  font-size: 13px;
+  background: transparent;
+  font-weight: 800;
+}
+.feed-action.active {
+  color: var(--purple);
+}
+.feed-action span {
+  color: var(--text);
+}
+.feed-actions > .button.red {
+  padding: 8px 12px;
 }
 .comment-list {
   display: grid;
