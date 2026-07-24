@@ -24,11 +24,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gamerconnect.testclient.data.profile.UserProfile
+
 
 @Composable
 fun DiscoveryScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    discoveryViewModel: DiscoveryViewModel = viewModel()
 ) {
+    val uiState = discoveryViewModel.uiState.collectAsStateWithLifecycle().value
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -63,7 +69,38 @@ fun DiscoveryScreen(
             )
         }
 
-        PlayerCard()
+        when {
+            uiState.isLoading -> {
+                Text(
+                    text = "Loading players...",
+                    color = Color.White
+                )
+            }
+
+            uiState.errorMessage != null -> {
+                Text(
+                    text = uiState.errorMessage,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            uiState.profiles.isEmpty() -> {
+                Text(
+                    text = "No players found.",
+                    color = Color(0xFF9CA3AF)
+                )
+            }
+
+            else -> {
+                val profile = uiState.profiles[uiState.currentIndex]
+
+                PlayerCard(
+                    profile = profile,
+                    onPass = discoveryViewModel::nextProfile,
+                    onPlay = discoveryViewModel::nextProfile
+                )
+            }
+        }
     }
 }
 
@@ -95,7 +132,11 @@ private fun DiscoveryTab(
 }
 
 @Composable
-private fun PlayerCard() {
+private fun PlayerCard(
+    profile: UserProfile,
+    onPass: () -> Unit,
+    onPlay: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -114,26 +155,40 @@ private fun PlayerCard() {
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Player media",
-                    color = Color(0xFF8D94A3)
+                    text = profile.displayName
+                        .firstOrNull()
+                        ?.uppercase()
+                        ?: "?",
+                    color = Color.White,
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
             Column(
-                modifier = Modifier.padding(
-                    horizontal = 16.dp
-                ),
+                modifier = Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    text = "NovaPulse",
+                    text = profile.displayName,
                     color = Color.White,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
 
                 Text(
-                    text = "22 · Australia",
+                    text = buildString {
+                        profile.age?.let {
+                            append(it)
+                            append(" · ")
+                        }
+
+                        append(
+                            profile.region.ifBlank {
+                                "Region not set"
+                            }
+                        )
+                    },
                     color = Color(0xFF8D94A3),
                     fontSize = 14.sp
                 )
@@ -145,17 +200,32 @@ private fun PlayerCard() {
                 )
 
                 Text(
-                    text = "Apex Legends",
+                    text = profile.topGames
+                        .firstOrNull()
+                        ?: "No game selected",
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold
                 )
 
                 Text(
-                    text = "Ranked · Any Role · Diamond II",
+                    text = listOf(
+                        profile.rank,
+                        profile.playStyle.joinToString(", ")
+                    )
+                        .filter { it.isNotBlank() }
+                        .joinToString(" · "),
                     color = MaterialTheme.colorScheme.primary,
                     fontSize = 14.sp
                 )
+
+                if (profile.bio.isNotBlank()) {
+                    Text(
+                        text = profile.bio,
+                        color = Color(0xFFB8BFCC),
+                        fontSize = 14.sp
+                    )
+                }
             }
 
             Row(
@@ -165,7 +235,7 @@ private fun PlayerCard() {
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 Button(
-                    onClick = {},
+                    onClick = onPass,
                     shape = CircleShape,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF151B26)
@@ -178,7 +248,7 @@ private fun PlayerCard() {
                 }
 
                 Button(
-                    onClick = {},
+                    onClick = onPlay,
                     shape = CircleShape,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary
