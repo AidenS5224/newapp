@@ -84,6 +84,8 @@ const state = {
   games: [],
   lfg: [],
   squads: [],
+  feedReactions: [],
+  feedComments: [],
   connections: [],
   blocks: [],
   conversations: [],
@@ -138,18 +140,22 @@ async function loadData() {
   state.loadingData = true;
   try {
     await ensureProfile();
-    const [profiles, games, feed, lfg, squads] = await Promise.all([
+    const [profiles, games, feed, lfg, squads, feedReactions, feedComments] = await Promise.all([
       read("profiles", "id, handle, display_name, age, region, timezone, platforms, top_games, rank, play_style, availability, bio, avatar_url, online, stats, created_at"),
       read("games", "*"),
       read("feed_posts", "*", { order: "created_at" }),
       read("lfg_posts", "*", { order: "created_at" }),
-      read("squads", "*", { order: "created_at" })
+      read("squads", "*", { order: "created_at" }),
+      read("feed_reactions", "*"),
+      read("feed_comments", "*", { order: "created_at", ascending: true })
     ]);
     state.profiles = profiles || [];
     state.games = games || [];
     state.feed = feed || [];
     state.lfg = lfg || [];
     state.squads = squads || [];
+    state.feedReactions = feedReactions || [];
+    state.feedComments = feedComments || [];
     if (state.session) {
       [state.connections, state.blocks] = await Promise.all([loadConnections(), loadBlocks()]);
       state.conversations = await loadConversations();
@@ -172,7 +178,7 @@ async function loadData() {
 
 async function read(table, columns = "*", options = {}) {
   let query = state.supabase.from(table).select(columns);
-  if (options.order) query = query.order(options.order, { ascending: false });
+  if (options.order) query = query.order(options.order, { ascending: options.ascending ?? false });
   const { data, error } = await query;
   if (error) {
     console.warn(table, error.message);
@@ -279,6 +285,9 @@ function setupRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, handleRealtimeChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, handleRealtimeChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "conversation_participants" }, handleRealtimeChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "feed_posts" }, handleRealtimeChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "feed_reactions" }, handleRealtimeChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "feed_comments" }, handleRealtimeChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "connections" }, handleRealtimeChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "blocked_profiles" }, handleRealtimeChange)
     .subscribe(status => {
@@ -415,9 +424,25 @@ function renderConfigMissing() {
 
 function renderFeed() {
   return page("Feed", "Clips, posts, highlights, and squad updates.", `
-    ${renderComposer()}
-    <div class="grid">
-      ${state.feed.length ? state.feed.map(renderFeedPost).join("") : `<div class="empty">No posts yet. Sign in and create the first clip or squad update.</div>`}
+    <div class="feed-layout">
+      <section class="feed-main">
+        ${renderComposer()}
+        <div class="feed-list">
+          ${state.feed.length ? state.feed.map(renderFeedPost).join("") : `<div class="empty">No posts yet. Sign in and create the first clip or squad update.</div>`}
+        </div>
+      </section>
+      <aside class="feed-side">
+        <div class="card">
+          <h3>Trending Games</h3>
+          ${popularGames.slice(0, 6).map(game => `<span class="pill">${escapeHtml(game)}</span>`).join("")}
+        </div>
+        <div class="card">
+          <h3>Feed Signals</h3>
+          <p>${state.feed.length} post(s)</p>
+          <p>${state.feedComments.length} comment(s)</p>
+          <p>${state.feedReactions.length} like(s)</p>
+        </div>
+      </aside>
     </div>
   `);
 }
@@ -427,15 +452,26 @@ function renderComposer() {
     return `<div class="card notice"><h3>Sign in to post</h3><p>Create clips, posts, and event updates from your Profile tab.</p></div>`;
   }
   return `
-    <form class="card composer" data-create-post>
-      <h3>Share With The Feed</h3>
-      <input class="field" name="title" placeholder="Post title" required>
-      <textarea name="body" placeholder="Share a clip, highlight, squad update, or callout..." required></textarea>
-      <div class="btn-row">
+    <form class="card composer feed-composer" data-create-post>
+      <div class="composer-head">
+        <span class="chat-avatar">${renderAvatar(state.profile, state.profile?.handle)}</span>
+        <div>
+          <h3>Share With The Feed</h3>
+          <p>Post clips, squad updates, and game moments.</p>
+        </div>
+      </div>
+      <input class="field" name="title" placeholder="Give it a title" required>
+      <textarea name="body" placeholder="What happened? Share a highlight, squad update, or callout..." required></textarea>
+      <input class="field" name="media_url" placeholder="Optional clip or image URL">
+      <div class="composer-controls">
         <select class="field" name="post_type">
           <option value="post">Post</option>
           <option value="clip">Clip</option>
           <option value="event">Event</option>
+        </select>
+        <select class="field" name="game_id">
+          <option value="">No game</option>
+          ${state.games.map(game => `<option value="${escapeAttribute(game.id)}">${escapeHtml(game.name)}</option>`).join("")}
         </select>
         <button class="button green" type="submit">Publish</button>
       </div>
@@ -447,19 +483,68 @@ function renderFeedPost(post) {
   const author = profileFor(post.profile_id);
   const game = gameFor(post.game_id);
   const isClip = post.post_type === "clip";
+  const reactions = reactionsForPost(post.id);
+  const comments = commentsForPost(post.id);
+  const liked = reactions.some(reaction => reaction.profile_id === state.profile?.id);
+  const canDelete = post.profile_id === state.profile?.id;
   return `
-    <article class="card feed-card">
-      <span class="pill hot">${post.post_type || "post"}</span>
-      <h3>${escapeHtml(post.title)}</h3>
-      <p>${escapeHtml(author?.handle || "Player")} ${game ? `- ${escapeHtml(game.name)}` : ""}</p>
-      ${isClip ? `<div class="media">PLAY CLIP</div>` : ""}
-      <p>${escapeHtml(post.body)}</p>
-      <div class="btn-row">
-        <button class="button dark" data-like="${post.id}">Like</button>
-        <button class="button dark" data-comment-jump="${post.id}">Comment</button>
-        <button class="button" data-share="${post.id}">Share</button>
+    <article class="card feed-card" id="feed-${escapeAttribute(post.id)}">
+      <div class="feed-author">
+        <span class="chat-avatar">${renderAvatar(author, author?.handle || "Player")}</span>
+        <div>
+          <strong>${escapeHtml(author?.handle || "Player")}</strong>
+          <p>${game ? `${escapeHtml(game.name)} - ` : ""}${escapeHtml(formatRelativeTime(post.created_at))}</p>
+        </div>
+        <span class="pill hot">${escapeHtml(post.post_type || "post")}</span>
       </div>
+      <h3>${escapeHtml(post.title)}</h3>
+      <p>${escapeHtml(post.body)}</p>
+      ${post.media_url ? renderFeedMedia(post, isClip) : ""}
+      <div class="feed-metrics">
+        <span>${reactions.length} like(s)</span>
+        <span>${comments.length} comment(s)</span>
+      </div>
+      <div class="feed-actions">
+        <button class="button ${liked ? "purple" : "dark"}" data-like="${post.id}">${liked ? "Liked" : "Like"}</button>
+        <button class="button dark" data-comment-jump="${post.id}">Comment</button>
+        <button class="button dark" data-share="${post.id}">Share</button>
+        ${canDelete ? `<button class="button red" data-delete-post="${post.id}">Delete</button>` : ""}
+      </div>
+      <div class="comment-list" id="comments-${post.id}">
+        ${comments.slice(-3).map(renderFeedComment).join("")}
+      </div>
+      ${state.session ? `
+        <form class="comment-form" data-create-comment="${post.id}">
+          <input class="field" name="body" placeholder="Write a comment..." required autocomplete="off">
+          <button class="button green" type="submit">Send</button>
+        </form>
+      ` : ""}
     </article>
+  `;
+}
+
+function renderFeedMedia(post, isClip) {
+  const url = escapeAttribute(post.media_url);
+  if (isClip) {
+    return `
+      <div class="media clip-media">
+        <video controls preload="metadata" src="${url}"></video>
+      </div>
+    `;
+  }
+  return `<img class="feed-image" src="${url}" alt="">`;
+}
+
+function renderFeedComment(comment) {
+  const author = profileFor(comment.profile_id);
+  return `
+    <div class="feed-comment">
+      <span class="chat-avatar">${renderAvatar(author, author?.handle || "Player")}</span>
+      <div>
+        <strong>${escapeHtml(author?.handle || "Player")}</strong>
+        <p>${escapeHtml(comment.body)}</p>
+      </div>
+    </div>
   `;
 }
 
@@ -1080,6 +1165,10 @@ function bindPageEvents() {
   document.querySelectorAll("[data-sync-game]").forEach(button => button.addEventListener("click", () => syncGameStats(button.dataset.syncGame)));
   document.querySelector("[data-create-post]")?.addEventListener("submit", createPost);
   document.querySelectorAll("[data-like]").forEach(button => button.addEventListener("click", () => likePost(button.dataset.like)));
+  document.querySelectorAll("[data-delete-post]").forEach(button => button.addEventListener("click", () => deletePost(button.dataset.deletePost)));
+  document.querySelectorAll("[data-create-comment]").forEach(form => form.addEventListener("submit", createComment));
+  document.querySelectorAll("[data-comment-jump]").forEach(button => button.addEventListener("click", () => focusComment(button.dataset.commentJump)));
+  document.querySelectorAll("[data-share]").forEach(button => button.addEventListener("click", () => sharePost(button.dataset.share)));
   document.querySelectorAll("[data-connect]").forEach(button => button.addEventListener("click", () => connectToPlayer(button.dataset.connect)));
   document.querySelectorAll("[data-connection-response]").forEach(button => button.addEventListener("click", () => respondToConnection(button.dataset.connectionResponse, button.dataset.status)));
   document.querySelectorAll("[data-new-chat]").forEach(button => button.addEventListener("click", () => startChat(button.dataset.newChat)));
@@ -1375,27 +1464,87 @@ async function createPost(event) {
   event.preventDefault();
   if (!state.profile) return alert("Sign in first.");
   const form = new FormData(event.currentTarget);
+  const mediaUrl = String(form.get("media_url") || "").trim();
   const { error } = await state.supabase.from("feed_posts").insert({
     profile_id: state.profile.id,
     post_type: form.get("post_type"),
     title: form.get("title"),
     body: form.get("body"),
-    game_id: "apex-legends",
-    media_type: form.get("post_type") === "clip" ? "video" : null
+    game_id: form.get("game_id") || null,
+    media_url: mediaUrl || null,
+    media_type: mediaUrl ? (form.get("post_type") === "clip" ? "video" : "image") : null
   });
   if (error) return alert(error.message);
+  event.currentTarget.reset();
   await loadData();
 }
 
 async function likePost(postId) {
   if (!state.profile) return alert("Sign in first.");
-  const { error } = await state.supabase.from("feed_reactions").upsert({
+  const existing = state.feedReactions.find(reaction => reaction.post_id === postId && reaction.profile_id === state.profile.id);
+  if (existing) {
+    const { error } = await state.supabase
+      .from("feed_reactions")
+      .delete()
+      .eq("post_id", postId)
+      .eq("profile_id", state.profile.id);
+    if (error) return alert(error.message);
+    await loadData();
+    return;
+  }
+  const { error } = await state.supabase.from("feed_reactions").insert({
     post_id: postId,
     profile_id: state.profile.id,
     reaction: "like"
   });
   if (error) return alert(error.message);
   await loadData();
+}
+
+async function createComment(event) {
+  event.preventDefault();
+  if (!state.profile) return alert("Sign in first.");
+  const postId = event.currentTarget.dataset.createComment;
+  const form = new FormData(event.currentTarget);
+  const body = String(form.get("body") || "").trim();
+  if (!body) return;
+  const { error } = await state.supabase.from("feed_comments").insert({
+    post_id: postId,
+    profile_id: state.profile.id,
+    body
+  });
+  if (error) return alert(error.message);
+  event.currentTarget.reset();
+  await loadData();
+}
+
+async function deletePost(postId) {
+  if (!state.profile) return alert("Sign in first.");
+  if (!confirm("Delete this feed post?")) return;
+  const { error } = await state.supabase
+    .from("feed_posts")
+    .delete()
+    .eq("id", postId)
+    .eq("profile_id", state.profile.id);
+  if (error) return alert(error.message);
+  await loadData();
+}
+
+function focusComment(postId) {
+  const form = [...document.querySelectorAll("[data-create-comment]")].find(item => item.dataset.createComment === postId);
+  const input = form?.querySelector("input[name='body']");
+  input?.focus();
+  input?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function sharePost(postId) {
+  const url = `${window.location.origin}${window.location.pathname}#feed-${postId}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    alert("Post link copied.");
+  } catch (_error) {
+    alert(url);
+  }
 }
 
 async function connectToPlayer(profileId) {
@@ -1660,6 +1809,14 @@ function acceptedConnections() {
     seen.add(otherId);
     return true;
   });
+}
+
+function reactionsForPost(postId) {
+  return state.feedReactions.filter(reaction => reaction.post_id === postId);
+}
+
+function commentsForPost(postId) {
+  return state.feedComments.filter(comment => comment.post_id === postId);
 }
 
 function visibleConversations() {
