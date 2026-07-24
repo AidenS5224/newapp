@@ -525,29 +525,49 @@ function renderMessages() {
   const blocked = blockedProfiles();
   const conversations = visibleConversations();
   const selectedConversation = selectedConversationFrom(conversations);
+  const selectedProfile = selectedConversation ? selectedConversationProfile(selectedConversation) : null;
   return page("Messages", "Matched players, direct chats, and group conversations.", `
     ${state.session ? `
-      <div class="messages-grid">
+      <div class="messages-shell">
         <aside class="messages-side">
-          <div class="card">
-            <div class="section-head">
-              <h3>New Chat</h3>
-              <span class="pill">${accepted.length} people</span>
+          <div class="messages-list-panel">
+            <div class="messages-list-head">
+              <h3>Messages</h3>
+              <button class="icon-button" title="New chat" data-focus-new-chat>+</button>
             </div>
-            ${accepted.length ? renderNewChatForm(accepted) : `<p>Add people first, then start direct or group chats here.</p>`}
-          </div>
-          <div class="card">
-            <h3>Chats</h3>
+            <label class="message-search">
+              <span>Search</span>
+              <input placeholder="Search messages" disabled>
+            </label>
+            <div class="message-tabs">
+              <button class="active" type="button">All</button>
+              <button type="button">Unread <span>${incoming.length}</span></button>
+              <button type="button">Groups</button>
+            </div>
             <div class="conversation-list">
               ${conversations.length ? conversations.map(conversation => renderConversationListItem(conversation, selectedConversation?.id)).join("") : `<p>No conversations yet.</p>`}
+            </div>
+            <div class="find-more-card" data-tab="discovery">
+              <strong>Find More Players</strong>
+              <span>Expand your circle</span>
             </div>
           </div>
         </aside>
         <section class="chat-panel">
           ${selectedConversation ? renderChatThread(selectedConversation) : `<div class="empty">Create a chat or select a conversation.</div>`}
         </section>
+        <aside class="chat-profile-panel">
+          ${selectedProfile ? renderChatProfilePanel(selectedProfile, selectedConversation) : renderNewChatAside(accepted)}
+        </aside>
       </div>
-      <div class="grid two">
+      <div class="messages-utility-grid">
+        <div class="card new-chat-card" id="new-chat-card">
+          <div class="section-head">
+            <h3>New Chat</h3>
+            <span class="pill">${accepted.length} people</span>
+          </div>
+          ${accepted.length ? renderNewChatForm(accepted) : `<p>Add people first, then start direct or group chats here.</p>`}
+        </div>
         <div class="card">
           <h3>Connection Requests</h3>
           ${incoming.length ? incoming.map(renderIncomingConnection).join("") : `<p>No incoming requests.</p>`}
@@ -626,11 +646,19 @@ function renderConversationListItem(conversation, selectedId) {
   const messages = state.messages[conversation.id] || [];
   const last = messages[messages.length - 1];
   const participants = conversationParticipants(conversation);
+  const title = conversationTitle(conversation);
+  const avatarProfile = selectedConversationProfile(conversation) || participants[0];
   return `
     <button class="conversation-item ${conversation.id === selectedId ? "active" : ""}" data-select-conversation="${conversation.id}">
-      <span class="pill">${escapeHtml(conversation.conversation_type)}</span>
-      <strong>${escapeHtml(conversationTitle(conversation))}</strong>
-      <span>${escapeHtml(last?.body || `${participants.length} participant(s)`)}</span>
+      <span class="chat-avatar">${renderAvatar(avatarProfile, title)}</span>
+      <span class="conversation-copy">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(last ? lastMessagePreview(last) : `${participants.length} participant(s)`)}</span>
+      </span>
+      <span class="conversation-meta">
+        <small>${escapeHtml(formatRelativeTime(last?.created_at || conversation.updated_at || conversation.created_at))}</small>
+        ${messages.length ? `<em>${Math.min(messages.length, 9)}</em>` : ""}
+      </span>
     </button>
   `;
 }
@@ -638,21 +666,32 @@ function renderConversationListItem(conversation, selectedId) {
 function renderChatThread(conversation) {
   const messages = state.messages[conversation.id] || [];
   const participants = conversationParticipants(conversation);
+  const title = conversationTitle(conversation);
+  const other = selectedConversationProfile(conversation);
   return `
     <div class="chat-thread">
       <div class="chat-head">
-        <div>
-          <span class="pill">${escapeHtml(conversation.conversation_type)}</span>
-          <h3>${escapeHtml(conversationTitle(conversation))}</h3>
-          <p>${participants.map(profile => escapeHtml(profile.handle)).join(", ") || "No visible participants"}</p>
+        <div class="chat-title-wrap">
+          <span class="chat-avatar lg">${renderAvatar(other || participants[0], title)}</span>
+          <div>
+            <h3>${escapeHtml(title)}</h3>
+            <p>${other ? `${escapeHtml(other.online ? "Online" : "Online soon")} - ${escapeHtml(other.rank || "Unranked")}` : `${participants.length} participant(s)`}</p>
+          </div>
         </div>
-        <button class="button dark" data-refresh>Refresh</button>
+        <div class="chat-actions">
+          <button class="icon-button" title="Video" type="button">Vid</button>
+          <button class="icon-button" title="Call" type="button">Call</button>
+          <button class="icon-button" title="Info" type="button">Info</button>
+        </div>
       </div>
       <div class="message-list">
+        <div class="day-divider">Today</div>
         ${messages.length ? messages.map(renderMessageBubble).join("") : `<div class="empty">No messages yet. Send the first one.</div>`}
       </div>
       <form class="message-compose" data-send-message="${conversation.id}">
+        <button class="icon-button compose-plus" type="button">+</button>
         <input class="field" name="body" placeholder="Write a message..." autocomplete="off" required>
+        <button class="icon-button" type="button">GIF</button>
         <button class="button green" type="submit">Send</button>
       </form>
     </div>
@@ -667,6 +706,55 @@ function renderMessageBubble(message) {
       <strong>${escapeHtml(mine ? "You" : sender?.handle || "Player")}</strong>
       <p>${escapeHtml(message.body)}</p>
       <span>${escapeHtml(message.pending ? "Sending..." : formatShortDate(message.created_at))}</span>
+    </div>
+  `;
+}
+
+function renderNewChatAside(accepted) {
+  return `
+    <div class="side-profile-empty">
+      <div class="mark">GC</div>
+      <h3>Ready To Squad Up?</h3>
+      <p>Select a chat or create a new direct/group conversation with accepted players.</p>
+      <span class="pill">${accepted.length} people available</span>
+    </div>
+  `;
+}
+
+function renderChatProfilePanel(profile, conversation) {
+  const games = list(profile.top_games).map(gameLabel).filter(Boolean);
+  const styles = list(profile.play_style);
+  const stats = profile.stats || {};
+  const gameRanks = stats.gameRanks || {};
+  return `
+    <div class="chat-profile-card">
+      <div class="profile-cover"></div>
+      <div class="profile-summary">
+        <span class="chat-avatar xl">${renderAvatar(profile, profile.handle)}</span>
+        <h3>${escapeHtml(profile.handle || "Player")}</h3>
+        <p>${escapeHtml(profile.rank || "Unranked")} - ${escapeHtml(profile.region || "Unknown region")}</p>
+      </div>
+      <div class="profile-actions mini">
+        <button class="button" type="button" disabled>View Profile</button>
+        <button class="button dark" data-unfriend="${profile.id}">Unfriend</button>
+      </div>
+      <section>
+        <h4>About</h4>
+        <p>${escapeHtml(profile.bio || "No bio yet.")}</p>
+      </section>
+      <section>
+        <h4>Play Style</h4>
+        ${styles.length ? styles.slice(0, 4).map(style => `<span class="pill hot">${escapeHtml(style)}</span>`).join("") : `<p>No play style set.</p>`}
+      </section>
+      <section>
+        <h4>Games</h4>
+        ${games.length ? games.slice(0, 3).map(game => `<div class="mini-game-row"><span>${escapeHtml(game)}</span><small>${escapeHtml(gameRanks[game] || profile.rank || "Unranked")}</small></div>`).join("") : `<p>No games set.</p>`}
+      </section>
+      <section>
+        <h4>Availability</h4>
+        <div class="mini-game-row"><span>${escapeHtml(availabilityLabel(profile.availability) || "Not set")}</span><small>${escapeHtml(profile.timezone || "")}</small></div>
+      </section>
+      <button class="button red wide" data-block="${profile.id}">Block User</button>
     </div>
   `;
 }
@@ -969,6 +1057,7 @@ function bindPageEvents() {
   document.querySelectorAll("[data-block]").forEach(button => button.addEventListener("click", () => blockPlayer(button.dataset.block)));
   document.querySelectorAll("[data-unblock]").forEach(button => button.addEventListener("click", () => unblockPlayer(button.dataset.unblock)));
   document.querySelectorAll("[data-select-conversation]").forEach(button => button.addEventListener("click", () => selectConversation(button.dataset.selectConversation)));
+  document.querySelector("[data-focus-new-chat]")?.addEventListener("click", focusNewChat);
   document.querySelector("[data-new-chat-form]")?.addEventListener("submit", createChatFromForm);
   document.querySelectorAll("[data-send-message]").forEach(form => form.addEventListener("submit", sendMessage));
 }
@@ -1445,6 +1534,12 @@ function selectConversation(conversationId) {
   renderShell();
 }
 
+function focusNewChat() {
+  const card = document.querySelector("#new-chat-card");
+  card?.scrollIntoView({ behavior: "smooth", block: "center" });
+  card?.querySelector("input[name='title']")?.focus();
+}
+
 function profileFor(id) {
   return state.profiles.find(profile => profile.id === id);
 }
@@ -1496,10 +1591,26 @@ function selectedConversationFrom(conversations) {
   return conversations.find(conversation => conversation.id === state.selectedConversationId) || conversations[0];
 }
 
+function selectedConversationProfile(conversation) {
+  const otherId = conversationOtherProfileId(conversation);
+  return otherId ? profileFor(otherId) : null;
+}
+
 function conversationParticipants(conversation) {
   return (conversation.conversation_participants || [])
     .map(participant => profileFor(participant.profile_id))
     .filter(Boolean);
+}
+
+function renderAvatar(profile, fallback = "GC") {
+  if (profile?.avatar_url) return `<img src="${escapeAttribute(profile.avatar_url)}" alt="">`;
+  return `<span>${escapeHtml(initials(profile?.display_name || profile?.handle || fallback))}</span>`;
+}
+
+function lastMessagePreview(message) {
+  if (!message) return "";
+  const mine = message.sender_profile_id === state.profile?.id;
+  return `${mine ? "You: " : ""}${message.body || ""}`;
 }
 
 function conversationTitle(conversation) {
@@ -1543,6 +1654,20 @@ function formatShortDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function formatRelativeTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
 }
 
 function directConversationWith(profileId) {
