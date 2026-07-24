@@ -82,6 +82,10 @@ const state = {
   selectedConversationId: "",
   profilePanelOpen: false,
   newChatOpen: false,
+  discoveryTab: "lfg",
+  discoveryStarted: false,
+  discoveryIndex: 0,
+  discoveryPassed: [],
   discoveryFilters: { search: "", game: "", platform: "", style: "" },
   ready: false,
   config: null,
@@ -574,53 +578,178 @@ function renderDiscovery() {
   const incoming = pendingIncomingConnections();
   const outgoing = pendingOutgoingConnections();
   const filterGames = discoveryGameOptions();
-  const selectedGameLabel = state.discoveryFilters.game ? gameLabel(state.discoveryFilters.game) : "Any Game";
+  const activeIndex = Math.min(state.discoveryIndex || 0, Math.max(players.length - 1, 0));
+  const activeProfile = players[activeIndex];
+  const currentTab = state.discoveryTab || "lfg";
   return page("Discovery/LFG", "Find players and parties already forming.", `
-    <div class="discovery-page">
-      <section class="discovery-hero">
-        <div>
-          <span class="pill hot">Smart Matching</span>
-          <h3>Discover Players</h3>
-          <p>Sorted by games, platforms, play style, region, and profile compatibility.</p>
-        </div>
-        <div class="discovery-stats">
-          <strong>${players.length}</strong>
-          <span>${escapeHtml(selectedGameLabel)}</span>
-        </div>
-      </section>
-      <form class="discovery-filters" data-discovery-filters>
-        <input class="field" name="search" placeholder="Search players" value="${escapeAttribute(state.discoveryFilters.search)}">
-        <select class="field" name="game">
-          <option value="">Any game</option>
-          ${filterGames.map(game => `<option value="${escapeAttribute(game.value)}" ${game.value === state.discoveryFilters.game ? "selected" : ""}>${escapeHtml(game.label)}</option>`).join("")}
-        </select>
-        <select class="field" name="platform">
-          <option value="">Any platform</option>
-          ${platformOptions.map(platform => `<option value="${escapeAttribute(platform)}" ${platform === state.discoveryFilters.platform ? "selected" : ""}>${escapeHtml(platform)}</option>`).join("")}
-        </select>
-        <select class="field" name="style">
-          <option value="">Any play style</option>
-          ${playStyleOptions.map(style => `<option value="${escapeAttribute(style)}" ${style === state.discoveryFilters.style ? "selected" : ""}>${escapeHtml(style)}</option>`).join("")}
-        </select>
-      </form>
-      <div class="discovery-layout">
-        <section class="discovery-list">
-          ${players.length ? players.map(renderPlayerCard).join("") : `<div class="empty">No players matched those filters yet.</div>`}
-        </section>
-        <aside class="discovery-side">
-          <div class="card discovery-side-card">
-            <h3>Connection Requests</h3>
-            ${incoming.length ? incoming.map(renderIncomingConnection).join("") : `<p>No incoming requests.</p>`}
-            ${outgoing.length ? `<p class="muted">${outgoing.length} sent request(s) waiting for approval.</p>` : ""}
-          </div>
-          <div class="card discovery-side-card">
-            <h3>Looking For Group</h3>
-            ${state.lfg.length ? state.lfg.slice(0, 4).map(post => `<p><strong>${escapeHtml(post.title)}</strong><br>${escapeHtml(post.mode || "")} ${escapeHtml(post.starts_at || "")}</p>`).join("") : `<p>No LFG posts yet.</p>`}
-          </div>
-        </aside>
+    <div class="discovery-page deck-page">
+      <div class="discovery-mobile-head">
+        <strong>DISCOVERY / LFG</strong>
+        <span>${players.length ? `${activeIndex + 1}/${players.length}` : "0/0"}</span>
       </div>
+      <nav class="discovery-tabs" aria-label="Discovery sections">
+        <button type="button" class="${currentTab === "lfg" ? "active" : ""}" data-discovery-tab="lfg">Looking For Group</button>
+        <button type="button" class="${currentTab === "matches" ? "active" : ""}" data-discovery-tab="matches">Matches</button>
+        <button type="button" class="${currentTab === "posts" ? "active" : ""}" data-discovery-tab="posts">My Posts</button>
+      </nav>
+      ${currentTab === "lfg" ? `
+        <div class="discovery-deck-layout">
+          <section class="deck-stage">
+            ${state.discoveryStarted && activeProfile ? renderDiscoveryDeckCard(activeProfile, activeIndex, players.length) : renderDiscoveryStart(players.length)}
+          </section>
+          <aside class="discovery-side deck-side">
+            <form class="discovery-filter-card" data-discovery-filters>
+              <div>
+                <h3>Match Filters</h3>
+                <p>Tune the deck by game, platform, style, or player name.</p>
+              </div>
+              <input class="field" name="search" placeholder="Search players" value="${escapeAttribute(state.discoveryFilters.search)}">
+              <select class="field" name="game">
+                <option value="">Any game</option>
+                ${filterGames.map(game => `<option value="${escapeAttribute(game.value)}" ${game.value === state.discoveryFilters.game ? "selected" : ""}>${escapeHtml(game.label)}</option>`).join("")}
+              </select>
+              <div class="filter-row">
+                <select class="field" name="platform">
+                  <option value="">Any platform</option>
+                  ${platformOptions.map(platform => `<option value="${escapeAttribute(platform)}" ${platform === state.discoveryFilters.platform ? "selected" : ""}>${escapeHtml(platform)}</option>`).join("")}
+                </select>
+                <select class="field" name="style">
+                  <option value="">Any play style</option>
+                  ${playStyleOptions.map(style => `<option value="${escapeAttribute(style)}" ${style === state.discoveryFilters.style ? "selected" : ""}>${escapeHtml(style)}</option>`).join("")}
+                </select>
+              </div>
+            </form>
+            <div class="card discovery-side-card">
+              <h3>Connection Requests</h3>
+              ${incoming.length ? incoming.map(renderIncomingConnection).join("") : `<p>No incoming requests.</p>`}
+              ${outgoing.length ? `<p class="muted">${outgoing.length} sent request(s) waiting for approval.</p>` : ""}
+            </div>
+            <div class="card discovery-side-card">
+              <h3>Live LFG Posts</h3>
+              ${state.lfg.length ? state.lfg.slice(0, 4).map(renderDiscoveryLfgPost).join("") : `<p>No LFG posts yet.</p>`}
+            </div>
+          </aside>
+        </div>
+      ` : ""}
+      ${currentTab === "matches" ? renderDiscoveryMatches() : ""}
+      ${currentTab === "posts" ? renderDiscoveryPosts() : ""}
     </div>
   `);
+}
+
+function renderDiscoveryStart(count) {
+  return `
+    <section class="discovery-start-card">
+      <div class="start-icon">GC</div>
+      <h3>Find players to game with</h3>
+      <p>Swipe through players, review fit details, then choose Play or Pass.</p>
+      <button class="button purple wide" type="button" data-start-discovery ${count ? "" : "disabled"}>${count ? "Start Discovery" : "No Players Yet"}</button>
+    </section>
+  `;
+}
+
+function renderDiscoveryDeckCard(profile, index, total) {
+  const connection = connectionWith(profile.id);
+  const score = discoveryScore(profile);
+  const games = list(profile.top_games).map(gameLabel).filter(Boolean);
+  const styles = list(profile.play_style).slice(0, 4);
+  const platforms = list(profile.platforms).slice(0, 3);
+  const primaryGame = games[0] || "Any Game";
+  const matchTone = score.score >= 82 ? "hot" : score.score >= 70 ? "good" : "soft";
+  return `
+    <article class="discovery-deck-card">
+      <div class="deck-media game-${gameSlug(primaryGame)}">
+        <div class="deck-counter">${index + 1}/${total}</div>
+        <div class="deck-score ${matchTone}">
+          <strong>${score.score}%</strong>
+          <span>Match</span>
+        </div>
+        <div class="deck-media-title">
+          <span>Looking for</span>
+          <strong>${escapeHtml(primaryGame)}</strong>
+        </div>
+      </div>
+      <div class="deck-body">
+        <div class="deck-profile-row">
+          <span class="chat-avatar xl">${renderAvatar(profile, profile.handle)}</span>
+          <div>
+            <h3>${escapeHtml(profile.handle)}</h3>
+            <p>${escapeHtml(profile.age || "")}${profile.age ? " - " : ""}${escapeHtml(profile.region || "Unknown region")}</p>
+            <span class="pill hot">${escapeHtml(profile.rank || "Unranked")}</span>
+          </div>
+        </div>
+        <div class="deck-mini-tags">
+          ${platforms.map(platform => `<span>${escapeHtml(platform)}</span>`).join("")}
+          ${styles.map(style => `<span>${escapeHtml(style)}</span>`).join("")}
+        </div>
+        <p class="deck-bio">${escapeHtml(profile.bio || "No bio yet.")}</p>
+        <div class="deck-reasons">
+          ${score.reasons.map(reason => `<span>${escapeHtml(reason)}</span>`).join("")}
+        </div>
+        ${connection ? `<p class="muted">${escapeHtml(connectionSummary(connection, profile.id))}</p>` : ""}
+        <div class="deck-actions">${renderDeckActions(profile, connection)}</div>
+      </div>
+    </article>
+  `;
+}
+
+function renderDeckActions(profile, connection) {
+  if (!state.profile) return `<button class="deck-action pass" type="button" data-profile-tab>Sign In</button>`;
+  const pass = `<button class="deck-action pass" type="button" data-discovery-pass>Pass</button>`;
+  if (isBlocked(profile.id)) {
+    return `${pass}<button class="deck-action play" type="button" data-unblock="${profile.id}">Unblock</button>`;
+  }
+  if (!connection) {
+    return `${pass}<button class="deck-action play" type="button" data-connect="${profile.id}">Play</button>`;
+  }
+  if (connection.status === "accepted") {
+    return `${pass}<button class="deck-action play" type="button" data-new-chat="${profile.id}">Open Chat</button>`;
+  }
+  if (connection.status === "pending" && connection.to_profile_id === state.profile.id) {
+    return `${pass}<button class="deck-action play" type="button" data-connection-response="${connection.id}" data-status="accepted">Accept</button>`;
+  }
+  if (connection.status === "pending") {
+    return `${pass}<button class="deck-action play" type="button" disabled>Request Sent</button>`;
+  }
+  return `${pass}<button class="deck-action play" type="button" data-connect="${profile.id}">Try Again</button>`;
+}
+
+function renderDiscoveryLfgPost(post) {
+  return `
+    <div class="discovery-post-row">
+      <strong>${escapeHtml(post.title || "Untitled LFG")}</strong>
+      <p>${escapeHtml(post.game || post.mode || "Any game")} ${post.starts_at ? `- ${escapeHtml(post.starts_at)}` : ""}</p>
+    </div>
+  `;
+}
+
+function renderDiscoveryMatches() {
+  const matches = acceptedConnections()
+    .map(connection => otherProfileForConnection(connection))
+    .filter(Boolean);
+  return `
+    <section class="discovery-panel-grid">
+      ${matches.length ? matches.map(profile => `
+        <article class="discovery-match-card">
+          <span class="chat-avatar lg">${renderAvatar(profile, profile.handle)}</span>
+          <div>
+            <h3>${escapeHtml(profile.handle)}</h3>
+            <p>${escapeHtml(profile.region || "Unknown region")} - ${escapeHtml(profile.rank || "Unranked")}</p>
+          </div>
+          <button class="button green" type="button" data-new-chat="${profile.id}">Open Chat</button>
+        </article>
+      `).join("") : `<div class="empty">No matches yet. Start Discovery and press Play on someone who looks like a good fit.</div>`}
+    </section>
+  `;
+}
+
+function renderDiscoveryPosts() {
+  const mine = state.profile ? state.lfg.filter(post => post.profile_id === state.profile.id || post.created_by_profile_id === state.profile.id) : [];
+  return `
+    <section class="discovery-panel-grid">
+      ${mine.length ? mine.map(renderDiscoveryLfgPost).join("") : `<div class="empty">Your LFG posts will show here once posting is added to this section.</div>`}
+    </section>
+  `;
 }
 
 function renderPlayerCard(profile) {
@@ -1235,6 +1364,9 @@ function bindPageEvents() {
   document.querySelectorAll("[data-remove-game]").forEach(button => button.addEventListener("click", () => removeGame(button.dataset.removeGame)));
   document.querySelectorAll("[data-sync-game]").forEach(button => button.addEventListener("click", () => syncGameStats(button.dataset.syncGame)));
   document.querySelector("[data-discovery-filters]")?.addEventListener("input", updateDiscoveryFilters);
+  document.querySelectorAll("[data-discovery-tab]").forEach(button => button.addEventListener("click", () => switchDiscoveryTab(button.dataset.discoveryTab)));
+  document.querySelector("[data-start-discovery]")?.addEventListener("click", startDiscovery);
+  document.querySelector("[data-discovery-pass]")?.addEventListener("click", passDiscoveryProfile);
   document.querySelector("[data-create-post]")?.addEventListener("submit", createPost);
   document.querySelectorAll("[data-like]").forEach(button => button.addEventListener("click", () => likePost(button.dataset.like)));
   document.querySelectorAll("[data-delete-post]").forEach(button => button.addEventListener("click", () => deletePost(button.dataset.deletePost)));
@@ -2082,16 +2214,39 @@ function updateDiscoveryFilters(event) {
     platform: String(form.get("platform") || ""),
     style: String(form.get("style") || "")
   };
+  state.discoveryIndex = 0;
   renderShell();
   if (activeField === "search") {
     window.setTimeout(() => document.querySelector("[data-discovery-filters] [name='search']")?.focus(), 0);
   }
 }
 
+function switchDiscoveryTab(tab) {
+  state.discoveryTab = tab || "lfg";
+  renderShell();
+}
+
+function startDiscovery() {
+  state.discoveryStarted = true;
+  state.discoveryIndex = 0;
+  renderShell();
+}
+
+function passDiscoveryProfile() {
+  const players = discoveryPlayers();
+  const current = players[state.discoveryIndex || 0];
+  if (current && !state.discoveryPassed.includes(current.id)) {
+    state.discoveryPassed = [...state.discoveryPassed, current.id].slice(-50);
+  }
+  state.discoveryIndex = Math.min(state.discoveryIndex || 0, Math.max(players.length - 2, 0));
+  renderShell();
+}
+
 function discoveryPlayers() {
   const filters = state.discoveryFilters;
   return state.profiles
     .filter(profile => profile.id !== state.profile?.id && !isBlocked(profile.id))
+    .filter(profile => !state.discoveryPassed.includes(profile.id))
     .filter(profile => discoveryProfileMatches(profile, filters))
     .sort((left, right) => discoveryScore(right).score - discoveryScore(left).score);
 }
@@ -2183,6 +2338,10 @@ function gameForProfileValue(value) {
 
 function normalizeGameLookup(value) {
   return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function gameSlug(value) {
+  return normalizeGameLookup(value) || "default";
 }
 
 function visibleConversations() {

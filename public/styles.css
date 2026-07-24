@@ -310,6 +310,277 @@ button { cursor: pointer; }
 .discovery-actions {
   margin-top: 2px;
 }
+.deck-page {
+  max-width: 1240px;
+}
+.discovery-mobile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  letter-spacing: .02em;
+  color: #f8fafc;
+}
+.discovery-mobile-head span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.discovery-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: min(620px, 100%);
+  border: 1px solid rgba(38, 50, 68, .72);
+  border-radius: 10px;
+  padding: 5px;
+  background: rgba(7, 13, 24, .82);
+}
+.discovery-tabs button {
+  border: 0;
+  border-radius: 7px;
+  padding: 10px 12px;
+  color: #cbd5e1;
+  background: transparent;
+}
+.discovery-tabs button.active {
+  color: #fff;
+  background: linear-gradient(135deg, #6d28d9, #4c1d95);
+  box-shadow: 0 8px 24px rgba(109, 40, 217, .24);
+}
+.discovery-deck-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 560px) minmax(280px, 360px);
+  gap: 18px;
+  align-items: start;
+}
+.deck-stage {
+  min-width: 0;
+}
+.discovery-start-card,
+.discovery-deck-card,
+.discovery-filter-card,
+.discovery-match-card {
+  border: 1px solid rgba(81, 99, 126, .5);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(124, 58, 237, .17), transparent 32%),
+    linear-gradient(180deg, rgba(14, 24, 40, .98), rgba(5, 11, 21, .98));
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .24);
+}
+.discovery-start-card {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  min-height: 520px;
+  align-content: center;
+  padding: 28px;
+  text-align: center;
+}
+.discovery-start-card h3,
+.discovery-start-card p {
+  margin: 0;
+}
+.discovery-start-card p {
+  color: var(--muted);
+}
+.start-icon {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border: 1px solid rgba(161, 89, 255, .7);
+  border-radius: 24px;
+  color: #c084fc;
+  background: rgba(76, 29, 149, .34);
+  font-weight: 900;
+}
+.discovery-deck-card {
+  overflow: hidden;
+}
+.deck-media {
+  position: relative;
+  min-height: 340px;
+  aspect-ratio: 4 / 3;
+  background:
+    linear-gradient(180deg, rgba(3, 7, 18, .06), rgba(3, 7, 18, .9)),
+    radial-gradient(circle at 68% 30%, rgba(59, 130, 246, .36), transparent 22%),
+    radial-gradient(circle at 22% 38%, rgba(124, 58, 237, .44), transparent 28%),
+    linear-gradient(135deg, #132033, #070b14 60%);
+}
+.deck-media.game-rocket-league {
+  background:
+    linear-gradient(180deg, rgba(3, 7, 18, .08), rgba(3, 7, 18, .88)),
+    radial-gradient(circle at 65% 32%, rgba(251, 146, 60, .42), transparent 20%),
+    radial-gradient(circle at 40% 55%, rgba(37, 99, 235, .42), transparent 24%),
+    linear-gradient(135deg, #10233d, #07101f);
+}
+.deck-media.game-rainbow-six-siege,
+.deck-media.game-call-of-duty-warzone {
+  background:
+    linear-gradient(180deg, rgba(3, 7, 18, .08), rgba(3, 7, 18, .88)),
+    radial-gradient(circle at 68% 32%, rgba(148, 163, 184, .32), transparent 20%),
+    radial-gradient(circle at 22% 50%, rgba(34, 197, 94, .28), transparent 24%),
+    linear-gradient(135deg, #202938, #050913);
+}
+.deck-counter,
+.deck-score,
+.deck-media-title {
+  position: absolute;
+  border: 1px solid rgba(148, 163, 184, .2);
+  border-radius: 999px;
+  background: rgba(3, 7, 18, .72);
+  backdrop-filter: blur(10px);
+}
+.deck-counter {
+  top: 16px;
+  left: 16px;
+  padding: 6px 10px;
+  color: #e2e8f0;
+}
+.deck-score {
+  top: 16px;
+  right: 16px;
+  display: grid;
+  justify-items: center;
+  min-width: 76px;
+  padding: 8px 10px;
+}
+.deck-score strong {
+  color: #a78bfa;
+  font-size: 22px;
+}
+.deck-score.good strong {
+  color: #4ade80;
+}
+.deck-score span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.deck-media-title {
+  left: 16px;
+  bottom: 16px;
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+}
+.deck-media-title span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.deck-body {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+.deck-profile-row {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+}
+.deck-profile-row h3,
+.deck-profile-row p,
+.deck-bio {
+  margin: 0;
+}
+.deck-profile-row h3 {
+  font-size: 27px;
+}
+.deck-profile-row p,
+.deck-bio {
+  color: var(--muted);
+}
+.deck-mini-tags,
+.deck-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.deck-mini-tags span,
+.deck-reasons span {
+  border: 1px solid rgba(81, 99, 126, .55);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, .78);
+  font-size: 12px;
+}
+.deck-reasons span {
+  border-color: rgba(34, 197, 94, .28);
+  color: #bbf7d0;
+  background: rgba(22, 101, 52, .18);
+}
+.deck-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 4px;
+}
+.deck-action {
+  border: 0;
+  border-radius: 10px;
+  padding: 16px;
+  color: #fff;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.deck-action.pass {
+  border: 1px solid rgba(148, 163, 184, .24);
+  background: rgba(15, 23, 42, .86);
+}
+.deck-action.play {
+  background: linear-gradient(135deg, #7c3aed, #4c1d95);
+}
+.deck-action:disabled {
+  opacity: .58;
+}
+.deck-side {
+  gap: 14px;
+}
+.discovery-filter-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+.discovery-filter-card h3,
+.discovery-filter-card p {
+  margin: 0;
+}
+.discovery-filter-card p,
+.discovery-post-row p {
+  color: var(--muted);
+}
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.discovery-post-row {
+  border-top: 1px solid var(--line);
+  padding: 10px 0 0;
+}
+.discovery-post-row:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.discovery-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  max-width: 900px;
+}
+.discovery-match-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 16px;
+}
+.discovery-match-card h3,
+.discovery-match-card p {
+  margin: 0;
+}
+.discovery-match-card p {
+  color: var(--muted);
+}
 .new-chat-form {
   display: grid;
   gap: 12px;
@@ -1396,6 +1667,9 @@ button { cursor: pointer; }
 }
 
 @media (max-width: 1180px) {
+  .discovery-deck-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .discovery-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1443,6 +1717,24 @@ button { cursor: pointer; }
   .nav button { padding: 9px 4px; text-align: center; font-size: 11px; }
   .main { padding: 16px; }
   .topbar { align-items: flex-start; flex-direction: column; }
+  .discovery-tabs {
+    width: 100%;
+  }
+  .discovery-tabs button {
+    padding: 9px 7px;
+    font-size: 12px;
+  }
+  .deck-media {
+    min-height: 300px;
+  }
+  .deck-profile-row h3 {
+    font-size: 23px;
+  }
+  .filter-row,
+  .deck-actions,
+  .discovery-match-card {
+    grid-template-columns: 1fr;
+  }
   .discovery-hero {
     grid-template-columns: 1fr;
   }
