@@ -6,6 +6,14 @@ const tabs = [
   ["profile", "Profile"]
 ];
 
+const tabIcons = {
+  events: "users",
+  discovery: "compass",
+  feed: "newspaper",
+  messages: "message",
+  profile: "user"
+};
+
 const popularGames = [
   "Apex Legends",
   "Valorant",
@@ -112,6 +120,28 @@ const state = {
 };
 
 const app = document.querySelector("#app");
+
+function icon(name) {
+  const paths = {
+    users: `<path d="M8 18v-1.5A3.5 3.5 0 0 1 11.5 13h1A3.5 3.5 0 0 1 16 16.5V18"/><circle cx="12" cy="7" r="3"/><path d="M3.5 18v-1a3 3 0 0 1 3-3"/><path d="M17.5 14a3 3 0 0 1 3 3v1"/><path d="M6.5 8.5a2 2 0 1 1 1.2-3.6"/><path d="M16.3 4.9a2 2 0 1 1 1.2 3.6"/>`,
+    compass: `<circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/>`,
+    newspaper: `<path d="M4 5h13a3 3 0 0 1 3 3v10H7a3 3 0 0 1-3-3V5Z"/><path d="M7 8h6"/><path d="M7 12h10"/><path d="M7 16h7"/>`,
+    message: `<path d="M4 5h16v11H8l-4 4V5Z"/><path d="M8 9h8"/><path d="M8 13h5"/>`,
+    user: `<circle cx="12" cy="8" r="4"/><path d="M5 20a7 7 0 0 1 14 0"/>`,
+    sliders: `<path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h2"/><path d="M10 17h10"/><circle cx="8" cy="17" r="2"/>`,
+    edit: `<path d="M5 19h4l10-10-4-4L5 15v4Z"/><path d="M13 7l4 4"/>`,
+    x: `<path d="M6 6l12 12"/><path d="M18 6 6 18"/>`,
+    arrowLeft: `<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>`,
+    plus: `<path d="M12 5v14"/><path d="M5 12h14"/>`,
+    phone: `<path d="M22 16.9v3a2 2 0 0 1-2.2 2A19.8 19.8 0 0 1 3 5.2 2 2 0 0 1 5 3h3a2 2 0 0 1 2 1.7c.1.9.3 1.7.6 2.5a2 2 0 0 1-.4 2.1L9 10.5a16 16 0 0 0 4.5 4.5l1.2-1.2a2 2 0 0 1 2.1-.4c.8.3 1.6.5 2.5.6a2 2 0 0 1 1.7 1.9Z"/>`,
+    video: `<path d="M4 7h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4V7Z"/><path d="m17 10 4-2v8l-4-2"/>`,
+    info: `<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>`,
+    trash: `<path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 14h10l1-14"/><path d="M9 7V4h6v3"/>`,
+    send: `<path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M22 2 11 13"/>`,
+    smile: `<circle cx="12" cy="12" r="9"/><path d="M8 10h.01"/><path d="M16 10h.01"/><path d="M8 15c1.2 1 2.5 1.5 4 1.5s2.8-.5 4-1.5"/>`
+  };
+  return `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.message}</svg>`;
+}
 
 boot();
 
@@ -371,7 +401,7 @@ function renderShell() {
           </div>
         </div>
         <nav class="nav">
-          ${tabs.map(([id, label]) => `<button class="${state.tab === id ? "active" : ""}" data-tab="${id}">${label}</button>`).join("")}
+          ${tabs.map(([id, label]) => `<button class="${state.tab === id ? "active" : ""}" data-tab="${id}">${icon(tabIcons[id])}<span>${label}</span></button>`).join("")}
         </nav>
         <div class="session-card">
           <strong>${state.profile?.handle || "Guest"}</strong>
@@ -832,8 +862,8 @@ function renderMessages() {
                   <h3>Messages</h3>
                 </div>
                 <div class="messages-head-actions">
-                  <button class="icon-button small" title="Filters" type="button">Tune</button>
-                  <button class="icon-button purple" title="New chat" data-focus-new-chat>New</button>
+                  <button class="icon-button small" title="Filters" type="button">${icon("sliders")}</button>
+                  <button class="icon-button purple" title="New chat" data-focus-new-chat>${icon("edit")}</button>
                 </div>
               </div>
               <label class="message-search">
@@ -890,7 +920,7 @@ function renderNewChatPopover(acceptedConnectionsList) {
   return `
     <div class="new-chat-popover">
       <div class="new-chat-head">
-        <button class="icon-button" type="button" title="Close new chat" data-close-new-chat>x</button>
+        <button class="icon-button" type="button" title="Close new chat" data-close-new-chat>${icon("x")}</button>
         <h3>New Chat</h3>
         <span>${acceptedConnectionsList.length}</span>
       </div>
@@ -925,7 +955,7 @@ function renderNewChatForm(acceptedConnectionsList) {
       </label>
       <div class="new-chat-quick-row">
         <div class="create-group-bubble">
-          <span>+</span>
+          <span>${icon("plus")}</span>
           <strong>Create Group</strong>
         </div>
         ${people.slice(0, 6).map(profile => `
@@ -957,8 +987,8 @@ function renderNewChatForm(acceptedConnectionsList) {
       <div class="selected-chat-preview">
         ${people.slice(0, 2).map(profile => `<span>${escapeHtml(profile.handle)} <small>x</small></span>`).join("")}
       </div>
-      <button class="button purple" type="submit">Create Chat</button>
-      <button class="button dark" type="button">Create Group Chat</button>
+      <button class="button purple" type="submit">${icon("message")}Create Chat</button>
+      <button class="button dark" type="button">${icon("users")}Create Group Chat</button>
     </form>
   `;
 }
@@ -1009,7 +1039,7 @@ function renderChatThread(conversation) {
     <div class="chat-thread">
       <div class="chat-head">
         <button class="chat-title-wrap" type="button" data-toggle-chat-profile>
-          <span class="mobile-chat-back" data-messages-list>&lt;</span>
+          <span class="mobile-chat-back" data-messages-list>${icon("arrowLeft")}</span>
           <span class="chat-avatar lg">${renderAvatar(other || participants[0], title)}</span>
           <div>
             <h3>${escapeHtml(title)}</h3>
@@ -1017,10 +1047,10 @@ function renderChatThread(conversation) {
           </div>
         </button>
         <div class="chat-actions">
-          <button class="icon-button" title="Call" type="button">Call</button>
-          <button class="icon-button" title="Video" type="button">Vid</button>
-          <button class="icon-button" title="Info" type="button" data-toggle-chat-profile>Info</button>
-          <button class="icon-button danger" title="Delete conversation" type="button" data-delete-conversation="${conversation.id}">Del</button>
+          <button class="icon-button" title="Call" type="button">${icon("phone")}</button>
+          <button class="icon-button" title="Video" type="button">${icon("video")}</button>
+          <button class="icon-button" title="Info" type="button" data-toggle-chat-profile>${icon("info")}</button>
+          <button class="icon-button danger" title="Delete conversation" type="button" data-delete-conversation="${conversation.id}">${icon("trash")}</button>
         </div>
       </div>
       <div class="message-list">
@@ -1028,10 +1058,10 @@ function renderChatThread(conversation) {
         ${messages.length ? messages.map(renderMessageBubble).join("") : `<div class="empty">No messages yet. Send the first one.</div>`}
       </div>
       <form class="message-compose" data-send-message="${conversation.id}">
-        <button class="icon-button compose-plus" type="button">+</button>
+        <button class="icon-button compose-plus" type="button">${icon("plus")}</button>
         <input class="field" name="body" placeholder="Write a message..." autocomplete="off" required>
-        <button class="icon-button" type="button">GIF</button>
-        <button class="button green" type="submit">Send</button>
+        <button class="icon-button" type="button">${icon("smile")}</button>
+        <button class="button green send-button" type="submit">${icon("send")}<span>Send</span></button>
       </form>
     </div>
   `;
@@ -1067,7 +1097,7 @@ function renderChatProfilePanel(profile, conversation) {
   const gameRanks = stats.gameRanks || {};
   return `
     <div class="chat-profile-card">
-      <button class="icon-button profile-panel-close" title="Close profile" type="button" data-toggle-chat-profile>x</button>
+      <button class="icon-button profile-panel-close" title="Close profile" type="button" data-toggle-chat-profile>${icon("x")}</button>
       <div class="profile-cover"></div>
       <div class="profile-summary">
         <span class="chat-avatar xl">${renderAvatar(profile, profile.handle)}</span>

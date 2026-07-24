@@ -23,6 +23,16 @@ body {
 }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
+.ui-icon {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: 0 0 auto;
+}
 
 .app-shell {
   min-height: 100vh;
@@ -64,12 +74,21 @@ button { cursor: pointer; }
   gap: 8px;
 }
 .nav button, .ghost-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 11px 12px;
   color: var(--text);
   background: var(--panel);
   text-align: left;
+}
+.nav button .ui-icon {
+  color: var(--muted);
+}
+.nav button.active .ui-icon {
+  color: var(--purple);
 }
 .nav button.active {
   border-color: var(--purple);
@@ -143,6 +162,12 @@ button { cursor: pointer; }
   padding: 10px 12px;
   color: white;
   background: var(--purple);
+}
+.button .ui-icon {
+  width: 17px;
+  height: 17px;
+  margin-right: 8px;
+  vertical-align: -3px;
 }
 .button.wide { width: 100%; }
 .button.green { background: #178b49; }
@@ -776,12 +801,18 @@ button { cursor: pointer; }
   gap: 8px;
 }
 .icon-button {
+  display: inline-grid;
+  place-items: center;
   min-width: 42px;
   min-height: 42px;
   border: 1px solid var(--line);
   border-radius: 10px;
   color: var(--text);
   background: rgba(19, 32, 51, .78);
+}
+.icon-button .ui-icon {
+  width: 18px;
+  height: 18px;
 }
 .icon-button.small {
   min-width: 40px;
@@ -797,8 +828,33 @@ button { cursor: pointer; }
   color: #fecaca;
 }
 .message-search {
+  position: relative;
   display: grid;
   margin-bottom: 14px;
+}
+.message-search::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 15px;
+  height: 15px;
+  border: 1.8px solid var(--muted);
+  border-radius: 50%;
+  transform: translateY(-50%);
+  opacity: .82;
+}
+.message-search::after {
+  content: "";
+  position: absolute;
+  left: 27px;
+  top: calc(50% + 8px);
+  width: 7px;
+  height: 1.8px;
+  border-radius: 999px;
+  background: var(--muted);
+  transform: rotate(45deg);
+  opacity: .82;
 }
 .message-search span {
   position: absolute;
@@ -811,7 +867,7 @@ button { cursor: pointer; }
   min-height: 44px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 0 14px;
+  padding: 0 14px 0 40px;
   color: var(--muted);
   background: rgba(8, 17, 31, .86);
 }
@@ -971,6 +1027,10 @@ button { cursor: pointer; }
   color: var(--text);
   font-size: 24px;
   line-height: 1;
+}
+.mobile-chat-back .ui-icon {
+  width: 22px;
+  height: 22px;
 }
 .chat-head h3 {
   margin: 0 0 4px;
@@ -1820,7 +1880,18 @@ button { cursor: pointer; }
   }
   .brand, .session-card { display: none; }
   .nav { grid-template-columns: repeat(5, 1fr); gap: 4px; }
-  .nav button { padding: 9px 4px; text-align: center; font-size: 11px; }
+  .nav button {
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    padding: 7px 4px;
+    text-align: center;
+    font-size: 11px;
+  }
+  .nav button .ui-icon {
+    width: 18px;
+    height: 18px;
+  }
   .main { padding: 16px; }
   .topbar { align-items: flex-start; flex-direction: column; }
   .discovery-tabs {
@@ -1907,7 +1978,11 @@ button { cursor: pointer; }
     border-radius: 6px;
     font-size: 10px;
     min-height: 32px;
-    padding: 6px 3px;
+    padding: 5px 3px;
+  }
+  .messages-app .nav button .ui-icon {
+    width: 15px;
+    height: 15px;
   }
   .message-page-wrap {
     height: 100%;
@@ -2065,9 +2140,16 @@ button { cursor: pointer; }
     min-height: 38px;
   }
   .message-compose .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     grid-column: 1 / -1;
     min-height: 38px;
     margin: 0;
+  }
+  .message-compose .button .ui-icon {
+    width: 16px;
+    height: 16px;
   }
   .new-chat-popover {
     padding: 16px 14px;
