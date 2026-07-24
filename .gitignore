@@ -11,3 +11,5 @@ app/build/
 local.properties
 android/.idea/modules.xml
 android/.idea/modules/
+android/.kotlin/
+android/*.hprof
