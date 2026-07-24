@@ -29,6 +29,9 @@ import com.gamerconnect.testclient.feature.feed.FeedScreen
 import com.gamerconnect.testclient.feature.discovery.DiscoveryScreen
 import com.gamerconnect.testclient.feature.messages.MessagesScreen
 import com.gamerconnect.testclient.feature.profile.ProfileScreen
+import com.gamerconnect.testclient.feature.groups.GroupsScreen
+
+
 
 private data class AppTab(
     val title: String,
@@ -82,6 +85,10 @@ fun GamerConnectApp() {
         }
     ) { innerPadding ->
         when (selectedTab) {
+            0 -> GroupsScreen(
+                modifier = Modifier.padding(innerPadding)
+            )
+
             1 -> DiscoveryScreen(
                 modifier = Modifier.padding(innerPadding)
             )
@@ -95,11 +102,6 @@ fun GamerConnectApp() {
             )
 
             4 -> ProfileScreen(
-                modifier = Modifier.padding(innerPadding)
-            )
-
-            else -> ScreenPlaceholder(
-                title = tabs[selectedTab].title,
                 modifier = Modifier.padding(innerPadding)
             )
         }
