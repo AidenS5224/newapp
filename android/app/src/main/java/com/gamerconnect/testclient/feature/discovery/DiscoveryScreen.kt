@@ -27,14 +27,26 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gamerconnect.testclient.data.profile.UserProfile
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.gamerconnect.testclient.data.lfg.LfgPost
 
 
 @Composable
 fun DiscoveryScreen(
     modifier: Modifier = Modifier,
-    discoveryViewModel: DiscoveryViewModel = viewModel()
+    discoveryViewModel: DiscoveryViewModel = viewModel(),
+    lfgViewModel: LfgViewModel = viewModel()
 ) {
     val uiState = discoveryViewModel.uiState.collectAsStateWithLifecycle().value
+    val lfgState = lfgViewModel.uiState.collectAsStateWithLifecycle().value
+
+    var selectedTab by remember {
+        mutableIntStateOf(0)
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -55,49 +67,100 @@ fun DiscoveryScreen(
         ) {
             DiscoveryTab(
                 title = "Looking For Group",
-                selected = true
+                selected = selectedTab == 0,
+                onClick = {
+                    selectedTab = 0
+                }
             )
 
             DiscoveryTab(
                 title = "Matches",
-                selected = false
+                selected = selectedTab == 1,
+                onClick = {
+                    selectedTab = 1
+                }
             )
 
             DiscoveryTab(
                 title = "My Posts",
-                selected = false
+                selected = selectedTab == 2,
+                onClick = {
+                    selectedTab = 2
+                }
             )
         }
 
-        when {
-            uiState.isLoading -> {
-                Text(
-                    text = "Loading players...",
-                    color = Color.White
-                )
+        when (selectedTab) {
+            0 -> {
+                when {
+                    lfgState.isLoading -> {
+                        Text(
+                            text = "Loading LFG posts...",
+                            color = Color.White
+                        )
+                    }
+
+                    lfgState.errorMessage != null -> {
+                        Text(
+                            text = lfgState.errorMessage,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    lfgState.posts.isEmpty() -> {
+                        Text(
+                            text = "No open LFG posts.",
+                            color = Color(0xFF9CA3AF)
+                        )
+                    }
+
+                    else -> {
+                        lfgState.posts.forEach { post ->
+                            LfgPostCard(post = post)
+                        }
+                    }
+                }
             }
 
-            uiState.errorMessage != null -> {
-                Text(
-                    text = uiState.errorMessage,
-                    color = MaterialTheme.colorScheme.error
-                )
+            1 -> {
+                when {
+                    uiState.isLoading -> {
+                        Text(
+                            text = "Loading players...",
+                            color = Color.White
+                        )
+                    }
+
+                    uiState.errorMessage != null -> {
+                        Text(
+                            text = uiState.errorMessage,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    uiState.profiles.isEmpty() -> {
+                        Text(
+                            text = "No players found.",
+                            color = Color(0xFF9CA3AF)
+                        )
+                    }
+
+                    else -> {
+                        val profile = uiState.profiles[uiState.currentIndex]
+
+                        PlayerCard(
+                            profile = profile,
+                            onPass = discoveryViewModel::nextProfile,
+                            onPlay = discoveryViewModel::nextProfile
+                        )
+                    }
+                }
             }
 
-            uiState.profiles.isEmpty() -> {
+            2 -> {
                 Text(
-                    text = "No players found.",
+                    text = "My LFG posts will appear here.",
                     color = Color(0xFF9CA3AF)
-                )
-            }
-
-            else -> {
-                val profile = uiState.profiles[uiState.currentIndex]
-
-                PlayerCard(
-                    profile = profile,
-                    onPass = discoveryViewModel::nextProfile,
-                    onPlay = discoveryViewModel::nextProfile
                 )
             }
         }
@@ -107,9 +170,11 @@ fun DiscoveryScreen(
 @Composable
 private fun DiscoveryTab(
     title: String,
-    selected: Boolean
+    selected: Boolean,
+    onClick: () -> Unit
 ) {
     Card(
+        onClick = onClick,
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (selected) {
@@ -128,6 +193,73 @@ private fun DiscoveryTab(
                 vertical = 8.dp
             )
         )
+    }
+}
+
+@Composable
+private fun LfgPostCard(
+    post: LfgPost
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF0B1220)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = post.title,
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = post.mode,
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 14.sp
+            )
+
+            if (post.rankRange.isNotBlank()) {
+                Text(
+                    text = "Rank: ${post.rankRange}",
+                    color = Color(0xFFB8BFCC),
+                    fontSize = 13.sp
+                )
+            }
+
+            if (post.partySize.isNotBlank()) {
+                Text(
+                    text = "Party size: ${post.partySize}",
+                    color = Color(0xFFB8BFCC),
+                    fontSize = 13.sp
+                )
+            }
+
+            if (post.startsAt.isNotBlank()) {
+                Text(
+                    text = "Starts: ${post.startsAt}",
+                    color = Color(0xFF8D94A3),
+                    fontSize = 12.sp
+                )
+            }
+
+            Button(
+                onClick = {},
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Text(
+                    text = "Request to Join",
+                    color = Color.White
+                )
+            }
+        }
     }
 }
 
