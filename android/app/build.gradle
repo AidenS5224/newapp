@@ -1,12 +1,30 @@
+
+import java.util.Properties
+
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
     id 'org.jetbrains.kotlin.plugin.compose'
+    id 'org.jetbrains.kotlin.plugin.serialization'
 }
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file("local.properties")
+
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { stream ->
+        localProperties.load(stream)
+    }
+}
+
+def supabaseUrl = localProperties.getProperty("SUPABASE_URL", "")
+def supabaseKey = localProperties.getProperty("SUPABASE_KEY", "")
+
+
 
 android {
     namespace 'com.gamerconnect.testclient'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.gamerconnect.testclient'
@@ -14,10 +32,13 @@ android {
         targetSdk 35
         versionCode 1
         versionName '0.1'
+        buildConfigField "String", "SUPABASE_URL", "\"${supabaseUrl}\""
+        buildConfigField "String", "SUPABASE_KEY", "\"${supabaseKey}\""
     }
 
     buildFeatures {
         compose true
+        buildConfig true
     }
 
     compileOptions {
@@ -46,4 +67,12 @@ dependencies {
 
     debugImplementation 'androidx.compose.ui:ui-tooling'
     debugImplementation 'androidx.compose.ui:ui-test-manifest'
+
+    def supabaseVersion = '3.6.0'
+    def ktorVersion = '3.5.0'
+
+    implementation platform("io.github.jan-tennert.supabase:bom:$supabaseVersion")
+    implementation 'io.github.jan-tennert.supabase:auth-kt'
+    implementation 'io.github.jan-tennert.supabase:postgrest-kt'
+    implementation "io.ktor:ktor-client-android:$ktorVersion"
 }
