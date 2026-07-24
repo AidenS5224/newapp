@@ -610,17 +610,42 @@ function renderNewChatForm(acceptedConnectionsList) {
   const people = acceptedConnectionsList.map(otherProfileForConnection).filter(Boolean);
   return `
     <form class="new-chat-form" data-new-chat-form>
-      <label>Chat Title<input class="field" name="title" placeholder="Optional group name"></label>
-      <div class="chat-picker">
-        ${people.map(profile => `
-          <label class="check-row">
+      <label class="message-search new-chat-search">
+        <span>Search</span>
+        <input placeholder="Search by username" data-new-chat-search autocomplete="off">
+      </label>
+      <div class="new-chat-quick-row">
+        <div class="create-group-bubble">
+          <span>+</span>
+          <strong>Create Group</strong>
+        </div>
+        ${people.slice(0, 6).map(profile => `
+          <label class="quick-person">
             <input type="checkbox" name="members" value="${escapeAttribute(profile.id)}">
-            <span>${escapeHtml(profile.handle)}</span>
+            <span class="chat-avatar">${renderAvatar(profile, profile.handle)}</span>
+            <strong>${escapeHtml(profile.handle)}</strong>
+          </label>
+        `).join("")}
+      </div>
+      <label>Chat Title<input class="field" name="title" placeholder="Optional group name"></label>
+      <div class="new-chat-suggested-head">
+        <span>Suggested</span>
+        <small>${people.length} available</small>
+      </div>
+      <div class="chat-picker suggested-picker">
+        ${people.map(profile => `
+          <label class="check-row person-row" data-person-row="${escapeAttribute(profile.handle)}">
+            <input type="checkbox" name="members" value="${escapeAttribute(profile.id)}">
+            <span class="chat-avatar">${renderAvatar(profile, profile.handle)}</span>
+            <span>
+              <strong>${escapeHtml(profile.handle)}</strong>
+              <small>${escapeHtml(profile.online ? "Online" : profile.region || "Offline")}</small>
+            </span>
           </label>
         `).join("")}
       </div>
       <label>First Message<input class="field" name="first_message" placeholder="Optional first message"></label>
-      <button class="button green" type="submit">Create Chat</button>
+      <button class="button purple" type="submit">Chat</button>
     </form>
   `;
 }
@@ -681,6 +706,7 @@ function renderChatThread(conversation) {
           <button class="icon-button" title="Video" type="button">Vid</button>
           <button class="icon-button" title="Call" type="button">Call</button>
           <button class="icon-button" title="Info" type="button">Info</button>
+          <button class="icon-button danger" title="Delete conversation" type="button" data-delete-conversation="${conversation.id}">Del</button>
         </div>
       </div>
       <div class="message-list">
@@ -1056,8 +1082,10 @@ function bindPageEvents() {
   document.querySelectorAll("[data-block]").forEach(button => button.addEventListener("click", () => blockPlayer(button.dataset.block)));
   document.querySelectorAll("[data-unblock]").forEach(button => button.addEventListener("click", () => unblockPlayer(button.dataset.unblock)));
   document.querySelectorAll("[data-select-conversation]").forEach(button => button.addEventListener("click", () => selectConversation(button.dataset.selectConversation)));
+  document.querySelectorAll("[data-delete-conversation]").forEach(button => button.addEventListener("click", () => deleteConversation(button.dataset.deleteConversation)));
   document.querySelectorAll("[data-focus-new-chat]").forEach(button => button.addEventListener("click", toggleNewChat));
   document.querySelector("[data-close-new-chat]")?.addEventListener("click", closeNewChat);
+  document.querySelector("[data-new-chat-search]")?.addEventListener("input", filterNewChatPeople);
   document.querySelector("[data-new-chat-form]")?.addEventListener("submit", createChatFromForm);
   document.querySelectorAll("[data-send-message]").forEach(form => form.addEventListener("submit", sendMessage));
 }
@@ -1469,6 +1497,23 @@ async function createChatFromForm(event) {
   await loadData();
 }
 
+async function deleteConversation(conversationId) {
+  if (!state.profile) return alert("Sign in first.");
+  if (!conversationId) return;
+  const conversation = state.conversations.find(item => item.id === conversationId);
+  const title = conversation ? conversationTitle(conversation) : "this conversation";
+  if (!confirm(`Delete ${title}? It will be removed from your Messages list.`)) return;
+  const { error } = await state.supabase.rpc("delete_conversation", { target_conversation_id: conversationId });
+  if (error) {
+    alert(`${error.message}\n\nIf this mentions delete_conversation, run supabase/migrations/0010_conversation_delete_and_direct_dedupe.sql in Supabase SQL Editor.`);
+    return;
+  }
+  if (state.selectedConversationId === conversationId) state.selectedConversationId = "";
+  delete state.messages[conversationId];
+  state.conversations = state.conversations.filter(item => item.id !== conversationId);
+  await loadData();
+}
+
 async function ensureChat(profileIds, title = "", firstMessage = "") {
   const cleanIds = [...new Set(profileIds)].filter(profileId => profileId && !isBlocked(profileId));
   if (!cleanIds.length) {
@@ -1550,8 +1595,16 @@ function closeNewChat() {
 function focusNewChatInput() {
   if (!state.newChatOpen) return;
   window.setTimeout(() => {
-    document.querySelector(".new-chat-popover input[name='title']")?.focus();
+    document.querySelector(".new-chat-popover [data-new-chat-search]")?.focus();
   }, 0);
+}
+
+function filterNewChatPeople(event) {
+  const query = event.currentTarget.value.trim().toLowerCase();
+  document.querySelectorAll("[data-person-row]").forEach(row => {
+    const name = (row.dataset.personRow || "").toLowerCase();
+    row.hidden = query.length > 0 && !name.includes(query);
+  });
 }
 
 function profileFor(id) {
@@ -1597,7 +1650,16 @@ function acceptedConnections() {
 }
 
 function visibleConversations() {
-  return state.conversations.filter(conversation => !isConversationBlocked(conversation.id));
+  const seenDirect = new Set();
+  return state.conversations.filter(conversation => {
+    if (isConversationBlocked(conversation.id)) return false;
+    if (conversation.conversation_type !== "direct") return true;
+    const otherId = conversationOtherProfileId(conversation);
+    if (!otherId) return true;
+    if (seenDirect.has(otherId)) return false;
+    seenDirect.add(otherId);
+    return true;
+  });
 }
 
 function selectedConversationFrom(conversations) {
