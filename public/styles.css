@@ -170,6 +170,146 @@ button { cursor: pointer; }
 .connection-row p {
   margin: 3px 0 0;
 }
+.discovery-page {
+  display: grid;
+  gap: 16px;
+  max-width: 1180px;
+}
+.discovery-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  border: 1px solid rgba(81, 99, 126, .55);
+  border-radius: 12px;
+  padding: 20px;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(52, 211, 115, .12), transparent 30%),
+    radial-gradient(circle at 88% 0%, rgba(161, 89, 255, .2), transparent 34%),
+    linear-gradient(180deg, rgba(17, 30, 48, .94), rgba(7, 13, 24, .98));
+}
+.discovery-hero h3 {
+  margin: 8px 0 4px;
+  font-size: 30px;
+}
+.discovery-hero p {
+  margin: 0;
+  color: var(--muted);
+}
+.discovery-stats {
+  display: grid;
+  min-width: 126px;
+  justify-items: center;
+  border: 1px solid rgba(161, 89, 255, .48);
+  border-radius: 12px;
+  padding: 14px;
+  background: rgba(35, 17, 67, .55);
+}
+.discovery-stats strong {
+  font-size: 34px;
+}
+.discovery-stats span {
+  color: var(--muted);
+  text-align: center;
+}
+.discovery-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(150px, .45fr));
+  gap: 10px;
+  border: 1px solid rgba(38, 50, 68, .74);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(8, 17, 31, .72);
+}
+.discovery-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 16px;
+  align-items: start;
+}
+.discovery-list,
+.discovery-side {
+  display: grid;
+  gap: 12px;
+}
+.discovery-side {
+  position: sticky;
+  top: 24px;
+}
+.discovery-side-card {
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(161, 89, 255, .08), transparent 32%),
+    rgba(14, 24, 40, .86);
+}
+.discovery-card {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(81, 99, 126, .55);
+  border-radius: 12px;
+  padding: 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(52, 211, 115, .08), transparent 28%),
+    linear-gradient(180deg, rgba(17, 30, 48, .94), rgba(8, 15, 28, .98));
+}
+.discovery-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 98px;
+}
+.discovery-profile h3,
+.discovery-profile p,
+.discovery-card > p {
+  margin: 0;
+}
+.discovery-profile h3 {
+  font-size: 24px;
+}
+.discovery-profile p,
+.discovery-card > p {
+  color: var(--muted);
+}
+.discovery-match {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  justify-items: center;
+  min-width: 76px;
+  border: 1px solid rgba(52, 211, 115, .45);
+  border-radius: 12px;
+  padding: 9px 10px;
+  color: #bbf7d0;
+  background: rgba(20, 83, 45, .38);
+}
+.discovery-match strong {
+  font-size: 22px;
+}
+.discovery-match span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.discovery-tags,
+.compat-grid,
+.discovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.compat-grid span {
+  border: 1px solid rgba(52, 211, 115, .28);
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #bbf7d0;
+  background: rgba(20, 83, 45, .2);
+  font-size: 12px;
+}
+.discovery-actions {
+  margin-top: 2px;
+}
 .new-chat-form {
   display: grid;
   gap: 12px;
@@ -1256,6 +1396,15 @@ button { cursor: pointer; }
 }
 
 @media (max-width: 1180px) {
+  .discovery-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .discovery-side {
+    position: static;
+  }
+  .discovery-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .feed-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1294,6 +1443,24 @@ button { cursor: pointer; }
   .nav button { padding: 9px 4px; text-align: center; font-size: 11px; }
   .main { padding: 16px; }
   .topbar { align-items: flex-start; flex-direction: column; }
+  .discovery-hero {
+    grid-template-columns: 1fr;
+  }
+  .discovery-stats {
+    justify-items: start;
+  }
+  .discovery-filters {
+    grid-template-columns: 1fr;
+  }
+  .discovery-profile {
+    align-items: flex-start;
+    padding-right: 0;
+  }
+  .discovery-match {
+    position: static;
+    justify-items: start;
+    width: max-content;
+  }
   .two, .three { grid-template-columns: 1fr; }
   .profile-editor > .grid.two { grid-template-columns: 1fr; }
   .profile-grid { grid-template-columns: 1fr; }

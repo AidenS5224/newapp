@@ -82,6 +82,7 @@ const state = {
   selectedConversationId: "",
   profilePanelOpen: false,
   newChatOpen: false,
+  discoveryFilters: { search: "", game: "", platform: "", style: "" },
   ready: false,
   config: null,
   supabase: null,
@@ -569,24 +570,54 @@ function renderFeedComment(comment) {
 }
 
 function renderDiscovery() {
-  const players = state.profiles.filter(profile => profile.id !== state.profile?.id && !isBlocked(profile.id));
+  const players = discoveryPlayers();
   const incoming = pendingIncomingConnections();
   const outgoing = pendingOutgoingConnections();
+  const filterGames = discoveryGameOptions();
+  const selectedGameLabel = state.discoveryFilters.game ? gameLabel(state.discoveryFilters.game) : "Any Game";
   return page("Discovery/LFG", "Find players and parties already forming.", `
-    <div class="grid two">
-      <div>
-        ${players.length ? players.map(renderPlayerCard).join("") : `<div class="empty">No other players yet.</div>`}
-      </div>
-      <div class="grid">
-        <div class="card">
-          <h3>Connection Requests</h3>
-          ${incoming.length ? incoming.map(renderIncomingConnection).join("") : `<p>No incoming requests.</p>`}
-          ${outgoing.length ? `<p class="muted">${outgoing.length} sent request(s) waiting for approval.</p>` : ""}
+    <div class="discovery-page">
+      <section class="discovery-hero">
+        <div>
+          <span class="pill hot">Smart Matching</span>
+          <h3>Discover Players</h3>
+          <p>Sorted by games, platforms, play style, region, and profile compatibility.</p>
         </div>
-        <div class="card">
-          <h3>Looking For Group</h3>
-          ${state.lfg.length ? state.lfg.map(post => `<p><strong>${escapeHtml(post.title)}</strong><br>${escapeHtml(post.mode || "")} ${escapeHtml(post.starts_at || "")}</p>`).join("") : `<p>No LFG posts yet.</p>`}
+        <div class="discovery-stats">
+          <strong>${players.length}</strong>
+          <span>${escapeHtml(selectedGameLabel)}</span>
         </div>
+      </section>
+      <form class="discovery-filters" data-discovery-filters>
+        <input class="field" name="search" placeholder="Search players" value="${escapeAttribute(state.discoveryFilters.search)}">
+        <select class="field" name="game">
+          <option value="">Any game</option>
+          ${filterGames.map(game => `<option value="${escapeAttribute(game.value)}" ${game.value === state.discoveryFilters.game ? "selected" : ""}>${escapeHtml(game.label)}</option>`).join("")}
+        </select>
+        <select class="field" name="platform">
+          <option value="">Any platform</option>
+          ${platformOptions.map(platform => `<option value="${escapeAttribute(platform)}" ${platform === state.discoveryFilters.platform ? "selected" : ""}>${escapeHtml(platform)}</option>`).join("")}
+        </select>
+        <select class="field" name="style">
+          <option value="">Any play style</option>
+          ${playStyleOptions.map(style => `<option value="${escapeAttribute(style)}" ${style === state.discoveryFilters.style ? "selected" : ""}>${escapeHtml(style)}</option>`).join("")}
+        </select>
+      </form>
+      <div class="discovery-layout">
+        <section class="discovery-list">
+          ${players.length ? players.map(renderPlayerCard).join("") : `<div class="empty">No players matched those filters yet.</div>`}
+        </section>
+        <aside class="discovery-side">
+          <div class="card discovery-side-card">
+            <h3>Connection Requests</h3>
+            ${incoming.length ? incoming.map(renderIncomingConnection).join("") : `<p>No incoming requests.</p>`}
+            ${outgoing.length ? `<p class="muted">${outgoing.length} sent request(s) waiting for approval.</p>` : ""}
+          </div>
+          <div class="card discovery-side-card">
+            <h3>Looking For Group</h3>
+            ${state.lfg.length ? state.lfg.slice(0, 4).map(post => `<p><strong>${escapeHtml(post.title)}</strong><br>${escapeHtml(post.mode || "")} ${escapeHtml(post.starts_at || "")}</p>`).join("") : `<p>No LFG posts yet.</p>`}
+          </div>
+        </aside>
       </div>
     </div>
   `);
@@ -595,15 +626,35 @@ function renderDiscovery() {
 function renderPlayerCard(profile) {
   const connection = connectionWith(profile.id);
   const actions = renderConnectionActions(profile, connection);
+  const score = discoveryScore(profile);
+  const games = list(profile.top_games).map(gameLabel).filter(Boolean).slice(0, 4);
+  const styles = list(profile.play_style).slice(0, 4);
+  const platforms = list(profile.platforms).slice(0, 3);
   return `
-    <div class="card">
-      <span class="pill hot">${escapeHtml(profile.rank || "Unranked")}</span>
-      <h3>${escapeHtml(profile.handle)}</h3>
-      <p>${escapeHtml(profile.region || "Unknown")} - ${(profile.platforms || []).join(", ")}</p>
+    <article class="discovery-card">
+      <div class="discovery-match">
+        <strong>${score.score}%</strong>
+        <span>Match</span>
+      </div>
+      <div class="discovery-profile">
+        <span class="chat-avatar lg">${renderAvatar(profile, profile.handle)}</span>
+        <div>
+          <h3>${escapeHtml(profile.handle)}</h3>
+          <p>${escapeHtml(profile.rank || "Unranked")} - ${escapeHtml(profile.region || "Unknown region")}</p>
+        </div>
+      </div>
       <p>${escapeHtml(profile.bio || "No bio yet.")}</p>
+      <div class="discovery-tags">
+        ${games.map(game => `<span class="pill hot">${escapeHtml(game)}</span>`).join("")}
+        ${platforms.map(platform => `<span class="pill">${escapeHtml(platform)}</span>`).join("")}
+        ${styles.map(style => `<span class="pill">${escapeHtml(style)}</span>`).join("")}
+      </div>
+      <div class="compat-grid">
+        ${score.reasons.map(reason => `<span>${escapeHtml(reason)}</span>`).join("")}
+      </div>
       ${connection ? `<p class="muted">${escapeHtml(connectionSummary(connection, profile.id))}</p>` : ""}
-      <div class="btn-row">${actions}</div>
-    </div>
+      <div class="discovery-actions">${actions}</div>
+    </article>
   `;
 }
 
@@ -1183,6 +1234,7 @@ function bindPageEvents() {
   document.querySelectorAll("[data-pick-game]").forEach(button => button.addEventListener("click", () => addGame(button.dataset.pickGame)));
   document.querySelectorAll("[data-remove-game]").forEach(button => button.addEventListener("click", () => removeGame(button.dataset.removeGame)));
   document.querySelectorAll("[data-sync-game]").forEach(button => button.addEventListener("click", () => syncGameStats(button.dataset.syncGame)));
+  document.querySelector("[data-discovery-filters]")?.addEventListener("input", updateDiscoveryFilters);
   document.querySelector("[data-create-post]")?.addEventListener("submit", createPost);
   document.querySelectorAll("[data-like]").forEach(button => button.addEventListener("click", () => likePost(button.dataset.like)));
   document.querySelectorAll("[data-delete-post]").forEach(button => button.addEventListener("click", () => deletePost(button.dataset.deletePost)));
@@ -2019,6 +2071,96 @@ function reactionsForPost(postId) {
 
 function commentsForPost(postId) {
   return state.feedComments.filter(comment => comment.post_id === postId);
+}
+
+function updateDiscoveryFilters(event) {
+  const activeField = event.target?.name;
+  const form = new FormData(event.currentTarget);
+  state.discoveryFilters = {
+    search: String(form.get("search") || ""),
+    game: String(form.get("game") || ""),
+    platform: String(form.get("platform") || ""),
+    style: String(form.get("style") || "")
+  };
+  renderShell();
+  if (activeField === "search") {
+    window.setTimeout(() => document.querySelector("[data-discovery-filters] [name='search']")?.focus(), 0);
+  }
+}
+
+function discoveryPlayers() {
+  const filters = state.discoveryFilters;
+  return state.profiles
+    .filter(profile => profile.id !== state.profile?.id && !isBlocked(profile.id))
+    .filter(profile => discoveryProfileMatches(profile, filters))
+    .sort((left, right) => discoveryScore(right).score - discoveryScore(left).score);
+}
+
+function discoveryProfileMatches(profile, filters) {
+  const query = filters.search.trim().toLowerCase();
+  const games = list(profile.top_games);
+  const platforms = list(profile.platforms);
+  const styles = list(profile.play_style);
+  if (query) {
+    const haystack = [profile.handle, profile.display_name, profile.bio, profile.region, ...games.map(gameLabel), ...platforms, ...styles]
+      .join(" ")
+      .toLowerCase();
+    if (!haystack.includes(query)) return false;
+  }
+  if (filters.game && !games.some(game => normalizeGameLookup(game) === normalizeGameLookup(filters.game))) return false;
+  if (filters.platform && !platforms.includes(filters.platform)) return false;
+  if (filters.style && !styles.includes(filters.style)) return false;
+  return true;
+}
+
+function discoveryScore(profile) {
+  const mine = state.profile || {};
+  const profileGames = list(profile.top_games).map(normalizeGameLookup);
+  const myGames = list(mine.top_games).map(normalizeGameLookup);
+  const profilePlatforms = list(profile.platforms);
+  const myPlatforms = list(mine.platforms);
+  const profileStyles = list(profile.play_style);
+  const myStyles = list(mine.play_style);
+  const reasons = [];
+  let score = 48;
+  const sharedGames = profileGames.filter(game => myGames.includes(game));
+  const sharedPlatforms = profilePlatforms.filter(platform => myPlatforms.includes(platform));
+  const sharedStyles = profileStyles.filter(style => myStyles.includes(style));
+  if (sharedGames.length) {
+    score += 22;
+    reasons.push(`${sharedGames.length} shared game(s)`);
+  }
+  if (sharedPlatforms.length) {
+    score += 12;
+    reasons.push(`${sharedPlatforms.join(", ")}`);
+  }
+  if (sharedStyles.length) {
+    score += 10;
+    reasons.push(`${sharedStyles.slice(0, 2).join(", ")}`);
+  }
+  if (profile.region && mine.region && profile.region === mine.region) {
+    score += 8;
+    reasons.push("Same region");
+  }
+  if (profile.timezone && mine.timezone && profile.timezone === mine.timezone) {
+    score += 5;
+    reasons.push("Good schedule fit");
+  }
+  if (!reasons.length) reasons.push("New player to check out");
+  return { score: Math.min(score, 98), reasons: reasons.slice(0, 4) };
+}
+
+function discoveryGameOptions() {
+  const seen = new Set();
+  return state.profiles.flatMap(profile => list(profile.top_games)).map(value => ({
+    value,
+    label: gameLabel(value)
+  })).filter(option => {
+    const key = normalizeGameLookup(option.value);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((left, right) => left.label.localeCompare(right.label));
 }
 
 function profileFeedGameOptions() {
