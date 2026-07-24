@@ -1090,11 +1090,18 @@ function renderConversation(conversation) {
 
 function renderEventsServers() {
   return page("Events/Servers", "Sessions, communities, and game hubs.", `
-    <div class="grid two">
-      <div class="card"><h3>Tonight</h3><p>Ranked Apex testing window - 7PM to 11PM AEST.</p><button class="button green">Join Event</button></div>
-      <div class="card"><h3>Gamer Connect HQ</h3><p>Community hub for updates, feedback, clips, and early testers.</p><button class="button">Open Server</button></div>
-      ${state.squads.map(squad => `<div class="card"><h3>${escapeHtml(squad.name)}</h3><p>${escapeHtml(squad.description || "")}</p><span class="pill">${squad.open_slots} slot(s)</span></div>`).join("")}
-    </div>
+    <section class="coming-soon-panel">
+      <div class="coming-soon-mark">GC</div>
+      <span class="pill hot">Coming Soon</span>
+      <h3>Events and servers are on the way</h3>
+      <p>This section will become the home for community servers, scheduled sessions, tournaments, and game-specific hubs.</p>
+      <div class="coming-soon-grid">
+        <span>Community servers</span>
+        <span>Scheduled game nights</span>
+        <span>Squad events</span>
+        <span>Server discovery</span>
+      </div>
+    </section>
   `);
 }
 
