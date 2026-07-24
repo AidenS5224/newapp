@@ -26,6 +26,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gamerconnect.testclient.feature.feed.FeedScreen
+import com.gamerconnect.testclient.feature.discovery.DiscoveryScreen
+
+
 
 private data class AppTab(
     val title: String,
@@ -79,6 +82,10 @@ fun GamerConnectApp() {
         }
     ) { innerPadding ->
         when (selectedTab) {
+            1 -> DiscoveryScreen(
+                modifier = Modifier.padding(innerPadding)
+            )
+
             2 -> FeedScreen(
                 modifier = Modifier.padding(innerPadding)
             )
