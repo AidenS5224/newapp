@@ -21,5 +21,20 @@ class ProfileRepository {
             }
             .decodeSingle<UserProfile>()
     }
+    suspend fun getDiscoveryProfiles(): List<UserProfile> {
+        val currentUserId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+
+        return client
+            .from("profiles")
+            .select {
+                filter {
+                    neq("id", currentUserId)
+                }
+
+                limit(50)
+            }
+            .decodeList<UserProfile>()
+    }
 }
 
