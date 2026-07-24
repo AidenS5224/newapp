@@ -17,6 +17,7 @@ supabase/migrations/0004_r6data_provider.sql
 supabase/migrations/0005_fix_conversation_participant_rls_recursion.sql
 supabase/migrations/0006_blocks_and_unfriend_controls.sql
 supabase/migrations/0007_relationship_chat_rpc.sql
+supabase/migrations/0008_chat_message_rpc.sql
 ```
 
 Supabase should own production auth, public profiles, protected linked accounts, feed posts, comments, reactions, conversations, and messages.

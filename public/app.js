@@ -71,6 +71,7 @@ const state = {
   profileMessage: "",
   trackerMessage: "",
   profileDraftGames: null,
+  selectedConversationId: "",
   ready: false,
   config: null,
   supabase: null,
@@ -143,11 +144,13 @@ async function loadData() {
   if (state.session) {
     [state.connections, state.blocks] = await Promise.all([loadConnections(), loadBlocks()]);
     state.conversations = await loadConversations();
+    state.messages = await loadMessages();
     await loadPrivateProfile();
   } else {
     state.connections = [];
     state.blocks = [];
     state.conversations = [];
+    state.messages = {};
     state.privateProfile = null;
     state.linkedAccounts = [];
   }
@@ -233,6 +236,22 @@ async function loadBlocks() {
     return [];
   }
   return data || [];
+}
+
+async function loadMessages() {
+  const { data, error } = await state.supabase
+    .from("messages")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.warn(error.message);
+    return {};
+  }
+  return (data || []).reduce((grouped, message) => {
+    grouped[message.conversation_id] ||= [];
+    grouped[message.conversation_id].push(message);
+    return grouped;
+  }, {});
 }
 
 async function loadPrivateProfile() {
@@ -438,8 +457,30 @@ function renderMessages() {
   const outgoing = pendingOutgoingConnections();
   const accepted = acceptedConnections();
   const blocked = blockedProfiles();
+  const conversations = visibleConversations();
+  const selectedConversation = selectedConversationFrom(conversations);
   return page("Messages", "Matched players, direct chats, and group conversations.", `
     ${state.session ? `
+      <div class="messages-grid">
+        <aside class="messages-side">
+          <div class="card">
+            <div class="section-head">
+              <h3>New Chat</h3>
+              <span class="pill">${accepted.length} people</span>
+            </div>
+            ${accepted.length ? renderNewChatForm(accepted) : `<p>Add people first, then start direct or group chats here.</p>`}
+          </div>
+          <div class="card">
+            <h3>Chats</h3>
+            <div class="conversation-list">
+              ${conversations.length ? conversations.map(conversation => renderConversationListItem(conversation, selectedConversation?.id)).join("") : `<p>No conversations yet.</p>`}
+            </div>
+          </div>
+        </aside>
+        <section class="chat-panel">
+          ${selectedConversation ? renderChatThread(selectedConversation) : `<div class="empty">Create a chat or select a conversation.</div>`}
+        </section>
+      </div>
       <div class="grid two">
         <div class="card">
           <h3>Connection Requests</h3>
@@ -449,10 +490,6 @@ function renderMessages() {
           <h3>Your People</h3>
           ${accepted.length ? accepted.map(renderAcceptedConnection).join("") : `<p>Accepted players will show here.</p>`}
           ${outgoing.length ? `<p class="muted">${outgoing.length} sent request(s) waiting for approval.</p>` : ""}
-        </div>
-        <div class="card">
-          <h3>New Chat</h3>
-          ${accepted.length ? renderNewChatForm(accepted) : `<p>Add people first, then start direct or group chats here.</p>`}
         </div>
         <div class="card">
           <h3>Blocked Players</h3>
@@ -465,9 +502,6 @@ function renderMessages() {
         </div>
       </div>
     ` : `<div class="card notice"><h3>Sign in required</h3><p>Messages need a Supabase account.</p></div>`}
-    <div class="grid">
-      ${visibleConversations().length ? visibleConversations().map(renderConversation).join("") : `<div class="empty">No conversations yet.</div>`}
-    </div>
   `);
 }
 
@@ -518,6 +552,55 @@ function renderAcceptedConnection(connection) {
       <button class="button green" data-new-chat="${other.id}">Message</button>
       <button class="button dark" data-unfriend="${other.id}">Unfriend</button>
       <button class="button red" data-block="${other.id}">Block</button>
+    </div>
+  `;
+}
+
+function renderConversationListItem(conversation, selectedId) {
+  const messages = state.messages[conversation.id] || [];
+  const last = messages[messages.length - 1];
+  const participants = conversationParticipants(conversation);
+  return `
+    <button class="conversation-item ${conversation.id === selectedId ? "active" : ""}" data-select-conversation="${conversation.id}">
+      <span class="pill">${escapeHtml(conversation.conversation_type)}</span>
+      <strong>${escapeHtml(conversationTitle(conversation))}</strong>
+      <span>${escapeHtml(last?.body || `${participants.length} participant(s)`)}</span>
+    </button>
+  `;
+}
+
+function renderChatThread(conversation) {
+  const messages = state.messages[conversation.id] || [];
+  const participants = conversationParticipants(conversation);
+  return `
+    <div class="chat-thread">
+      <div class="chat-head">
+        <div>
+          <span class="pill">${escapeHtml(conversation.conversation_type)}</span>
+          <h3>${escapeHtml(conversationTitle(conversation))}</h3>
+          <p>${participants.map(profile => escapeHtml(profile.handle)).join(", ") || "No visible participants"}</p>
+        </div>
+        <button class="button dark" data-refresh>Refresh</button>
+      </div>
+      <div class="message-list">
+        ${messages.length ? messages.map(renderMessageBubble).join("") : `<div class="empty">No messages yet. Send the first one.</div>`}
+      </div>
+      <form class="message-compose" data-send-message="${conversation.id}">
+        <input class="field" name="body" placeholder="Write a message..." autocomplete="off" required>
+        <button class="button green" type="submit">Send</button>
+      </form>
+    </div>
+  `;
+}
+
+function renderMessageBubble(message) {
+  const mine = message.sender_profile_id === state.profile?.id;
+  const sender = profileFor(message.sender_profile_id);
+  return `
+    <div class="message-bubble ${mine ? "mine" : ""}">
+      <strong>${escapeHtml(mine ? "You" : sender?.handle || "Player")}</strong>
+      <p>${escapeHtml(message.body)}</p>
+      <span>${escapeHtml(formatShortDate(message.created_at))}</span>
     </div>
   `;
 }
@@ -819,6 +902,7 @@ function bindPageEvents() {
   document.querySelectorAll("[data-unfriend]").forEach(button => button.addEventListener("click", () => unfriendPlayer(button.dataset.unfriend)));
   document.querySelectorAll("[data-block]").forEach(button => button.addEventListener("click", () => blockPlayer(button.dataset.block)));
   document.querySelectorAll("[data-unblock]").forEach(button => button.addEventListener("click", () => unblockPlayer(button.dataset.unblock)));
+  document.querySelectorAll("[data-select-conversation]").forEach(button => button.addEventListener("click", () => selectConversation(button.dataset.selectConversation)));
   document.querySelector("[data-new-chat-form]")?.addEventListener("submit", createChatFromForm);
   document.querySelectorAll("[data-send-message]").forEach(form => form.addEventListener("submit", sendMessage));
 }
@@ -1157,6 +1241,7 @@ async function startChat(profileId) {
   }
   const conversationId = await ensureChat([profileId]);
   if (!conversationId) return;
+  state.selectedConversationId = conversationId;
   state.tab = "messages";
   await loadData();
 }
@@ -1207,7 +1292,7 @@ async function respondToConnection(connectionId, status) {
     .eq("id", connectionId);
   if (error) return alert(error.message);
   if (status === "accepted") {
-    await ensureChat([connection.from_profile_id]);
+    state.selectedConversationId = await ensureChat([connection.from_profile_id]);
     state.tab = "messages";
   }
   await loadData();
@@ -1221,6 +1306,7 @@ async function createChatFromForm(event) {
   if (!members.length) return alert("Choose at least one player.");
   const conversationId = await ensureChat(members, String(form.get("title") || ""), String(form.get("first_message") || ""));
   if (!conversationId) return;
+  state.selectedConversationId = conversationId;
   state.tab = "messages";
   event.currentTarget.reset();
   await loadData();
@@ -1258,14 +1344,22 @@ async function sendMessage(event) {
     alert("Unblock this player before sending messages.");
     return;
   }
-  const { error } = await state.supabase.from("messages").insert({
-    conversation_id: conversationId,
-    sender_profile_id: state.profile.id,
-    body
+  const { error } = await state.supabase.rpc("send_chat_message", {
+    target_conversation_id: conversationId,
+    message_body: body
   });
-  if (error) return alert(error.message);
+  if (error) {
+    alert(`${error.message}\n\nIf this mentions send_chat_message, run supabase/migrations/0008_chat_message_rpc.sql in Supabase SQL Editor.`);
+    return;
+  }
+  state.selectedConversationId = conversationId;
   event.currentTarget.reset();
   await loadData();
+}
+
+function selectConversation(conversationId) {
+  state.selectedConversationId = conversationId;
+  renderShell();
 }
 
 function profileFor(id) {
@@ -1314,6 +1408,26 @@ function visibleConversations() {
   return state.conversations.filter(conversation => !isConversationBlocked(conversation.id));
 }
 
+function selectedConversationFrom(conversations) {
+  if (!conversations.length) return null;
+  return conversations.find(conversation => conversation.id === state.selectedConversationId) || conversations[0];
+}
+
+function conversationParticipants(conversation) {
+  return (conversation.conversation_participants || [])
+    .map(participant => profileFor(participant.profile_id))
+    .filter(Boolean);
+}
+
+function conversationTitle(conversation) {
+  if (conversation.conversation_type === "direct") {
+    const otherId = conversationOtherProfileId(conversation);
+    const other = profileFor(otherId);
+    if (other) return other.handle;
+  }
+  return conversation.title || "Chat";
+}
+
 function otherProfileForConnection(connection) {
   if (!state.profile) return null;
   const otherId = connection.from_profile_id === state.profile.id ? connection.to_profile_id : connection.from_profile_id;
@@ -1339,6 +1453,13 @@ function conversationOtherProfileId(conversation) {
   if (!state.profile) return "";
   const participant = (conversation.conversation_participants || []).find(item => item.profile_id !== state.profile.id);
   return participant?.profile_id || "";
+}
+
+function formatShortDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function directConversationWith(profileId) {
