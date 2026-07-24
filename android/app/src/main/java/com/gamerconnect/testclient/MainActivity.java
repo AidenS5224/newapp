@@ -52,10 +52,16 @@ public class MainActivity extends Activity {
     private String sessionToken = "";
     private String loggedInHandle = "Guest";
     private String currentTab = "Feed";
+    private boolean discoveryStarted = false;
+    private int discoveryIndex = 0;
+    private String selectedConversationId = "";
     private JSONObject latestHealth;
     private JSONArray latestPlayers;
     private JSONArray latestPosts;
     private JSONArray latestSquads;
+    private JSONArray latestFeedPosts;
+    private JSONArray latestConversations;
+    private JSONArray latestConversationMessages;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -237,13 +243,34 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             try {
                 JSONObject health = getJson("/api/health");
-                JSONObject players = getJson("/api/players?game=apex-legends&platform=PC");
+                JSONObject players = getJson("/api/players");
                 JSONObject lfg = getJson("/api/lfg");
                 JSONObject squads = getJson("/api/squads");
+                JSONObject feed = getJson("/api/feed");
                 latestHealth = health;
                 latestPlayers = players.optJSONArray("players");
                 latestPosts = lfg.optJSONArray("posts");
                 latestSquads = squads.optJSONArray("squads");
+                latestFeedPosts = feed.optJSONArray("posts");
+                if (!sessionToken.isEmpty()) {
+                    try {
+                        JSONObject conversations = getJson("/api/conversations");
+                        latestConversations = conversations.optJSONArray("conversations");
+                        if ((selectedConversationId == null || selectedConversationId.isEmpty()) && latestConversations != null && latestConversations.length() > 0) {
+                            selectedConversationId = latestConversations.optJSONObject(0).optString("id");
+                        }
+                        if (selectedConversationId != null && !selectedConversationId.isEmpty()) {
+                            JSONObject messages = getJson("/api/conversations/" + selectedConversationId + "/messages");
+                            latestConversationMessages = messages.optJSONArray("messages");
+                        }
+                    } catch (Exception ignored) {
+                        latestConversations = new JSONArray();
+                        latestConversationMessages = new JSONArray();
+                    }
+                } else {
+                    latestConversations = new JSONArray();
+                    latestConversationMessages = new JSONArray();
+                }
                 runOnUiThread(this::renderCurrentView);
             } catch (Exception ex) {
                 runOnUiThread(() -> {
@@ -286,82 +313,101 @@ public class MainActivity extends Activity {
 
     private void renderDiscoveryLfg() {
         JSONArray players = latestPlayers;
-        content.addView(buildHero());
-        content.addView(filterChips());
+        content.addView(discoveryTabs());
         if (players == null || players.length() == 0) {
             content.addView(messageCard("No Matches Found", "Adjust your filters or refresh discovery.", MUTED));
             return;
         }
-        JSONObject featured = players.optJSONObject(0);
+        if (!discoveryStarted) {
+            content.addView(discoveryStartCard(players.length()));
+            content.addView(connectionRequestCard());
+            return;
+        }
+        int safeIndex = Math.max(0, Math.min(discoveryIndex, players.length() - 1));
+        JSONObject featured = players.optJSONObject(safeIndex);
         if (featured != null) {
-            content.addView(playerCard(featured, 0));
-            content.addView(matchPanel(featured));
+            content.addView(buildHero(safeIndex + 1, players.length()));
+            content.addView(filterChips());
+            content.addView(playerCard(featured, safeIndex));
+            content.addView(connectionRequestCard());
         }
+    }
 
-        content.addView(section("Looking For Group", "Active parties you can jump into"));
-        for (int i = 0; latestPosts != null && i < latestPosts.length(); i++) {
-            JSONObject post = latestPosts.optJSONObject(i);
-            if (post != null) content.addView(lfgCard(post));
-        }
+    private View discoveryTabs() {
+        LinearLayout card = panel(PANEL, dp(6), dp(12));
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.addView(chip("Looking For Group", true), weighted());
+        card.addView(chip("Matches", false), weighted());
+        card.addView(chip("My Posts", false), weighted());
+        return card;
+    }
+
+    private View discoveryStartCard(int count) {
+        LinearLayout card = panel(PANEL, dp(22), dp(14));
+        card.setGravity(Gravity.CENTER);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setMinimumHeight(dp(460));
+        card.addView(badge("GC", PURPLE, dp(76)));
+        card.addView(centerText("Find players to game with", 22, TEXT, true));
+        card.addView(centerText("Swipe right to play, left to pass.", 14, MUTED, false));
+        card.addView(button(count > 0 ? "Start Discovery" : "No Players Yet", PURPLE, v -> {
+            if (count <= 0) return;
+            discoveryStarted = true;
+            discoveryIndex = 0;
+            renderCurrentView();
+        }), matchWrap());
+        return card;
+    }
+
+    private View connectionRequestCard() {
+        return messageCard("Connection Requests", "Incoming requests will live here while Messages stays focused on chats.", PURPLE);
     }
 
     private void renderFeed() {
         content.addView(section("Feed", "Clips, posts, highlights, and squad updates"));
         content.addView(feedComposer());
-        content.addView(feedPost(
-                "NovaPulse",
-                "Ranked clutch from last night. Looking for two calm teammates for the next push.",
-                "Apex Legends",
-                "CLIP",
-                GREEN
-        ));
-        content.addView(feedPost(
-                "Weekend Warriors",
-                "Friday squad night is open. Bring comms, good vibes, and a warm-up game.",
-                "Group Post",
-                "EVENT",
-                PURPLE
-        ));
-        content.addView(feedPost(
-                "ZaneFPS",
-                "Entry routes I am testing this week. Drop your best retake setup.",
-                "VALORANT",
-                "POST",
-                GOLD
-        ));
+        if (latestFeedPosts != null && latestFeedPosts.length() > 0) {
+            for (int i = 0; i < latestFeedPosts.length(); i++) {
+                JSONObject post = latestFeedPosts.optJSONObject(i);
+                if (post != null) content.addView(feedPost(post));
+            }
+            return;
+        }
+        content.addView(messageCard("No feed posts yet", "Posts from /api/feed will show here. Use the web app or backend API to create the first one.", MUTED));
     }
 
     private void renderMessages() {
         content.addView(section("Messages", "Chats from matched players and groups"));
-        content.addView(messageCard(
-                "Start New Chat",
-                sessionToken.isEmpty()
-                        ? "Log in from Profile, then start chats with approved matches and groups."
-                        : "Choose an approved match or group below to start a conversation.",
-                PURPLE
-        ));
-
-        content.addView(section("Matched Players", "People with approved connections"));
-        int matched = 0;
-        for (int i = 0; latestPlayers != null && i < latestPlayers.length(); i++) {
-            JSONObject player = latestPlayers.optJSONObject(i);
-            if (player == null) continue;
-            if (player.optBoolean("protectedVisible") && !loggedInHandle.equals(player.optString("handle"))) {
-                content.addView(chatCard(player.optString("handle"), "Protected info unlocked - ready to chat", GREEN));
-                matched++;
-            }
-        }
-        if (matched == 0) {
-            content.addView(messageCard("No matched players yet", "Use Discover to connect. Approved connections will appear here.", MUTED));
+        if (sessionToken.isEmpty()) {
+            content.addView(messageCard("Sign in to test chat", "Open Profile, log in, then conversations from /api/conversations will appear here.", PURPLE));
+            return;
         }
 
-        content.addView(section("Groups", "Squads and server-style chats"));
-        for (int i = 0; latestSquads != null && i < latestSquads.length(); i++) {
-            JSONObject squad = latestSquads.optJSONObject(i);
-            if (squad != null) {
-                content.addView(chatCard(squad.optString("name"), squad.optString("gameName") + " group chat", PURPLE));
-            }
+        LinearLayout toolbar = panel(PANEL, dp(12), dp(12));
+        toolbar.setOrientation(LinearLayout.HORIZONTAL);
+        toolbar.addView(button("New Test Chat", PURPLE, v -> createTestConversation()), weighted());
+        toolbar.addView(button("Refresh", PANEL_ALT, v -> loadAll()), weighted());
+        content.addView(toolbar);
+
+        if (latestConversations == null || latestConversations.length() == 0) {
+            content.addView(messageCard("No conversations yet", "Tap New Test Chat to create one with the first available player.", MUTED));
+            return;
         }
+
+        content.addView(section("Chats", "Tap a conversation to open it"));
+        for (int i = 0; i < latestConversations.length(); i++) {
+            JSONObject conversation = latestConversations.optJSONObject(i);
+            if (conversation != null) content.addView(conversationCard(conversation));
+        }
+
+        JSONObject selected = selectedConversation();
+        if (selected == null) return;
+        content.addView(section(selected.optString("title", "Chat"), "Live backend message thread"));
+        for (int i = 0; latestConversationMessages != null && i < latestConversationMessages.length(); i++) {
+            JSONObject message = latestConversationMessages.optJSONObject(i);
+            if (message != null) content.addView(messageBubble(message));
+        }
+        content.addView(messageComposer(selected.optString("id")));
     }
 
     private void renderProfile() {
@@ -399,10 +445,15 @@ public class MainActivity extends Activity {
 
     private void renderEventsServers() {
         content.addView(section("Events/Servers", "Sessions, communities, and game hubs"));
-        content.addView(messageCard("Tonight", "Ranked Apex testing window - 7PM to 11PM AEST", GREEN));
-        content.addView(messageCard("Gamer Connect HQ", "Discord-style community hub for updates, feedback, and early testers.", PURPLE));
-        content.addView(messageCard("Weekend Warriors", "Apex Legends squad server - voice preferred", GREEN));
-        content.addView(messageCard("Coming Next", "Create event, RSVP, reminders, server discovery, and squad invites will live here.", PURPLE));
+        LinearLayout card = panel(PANEL, dp(22), dp(14));
+        card.setGravity(Gravity.CENTER);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setMinimumHeight(dp(460));
+        card.addView(badge("GC", PURPLE, dp(76)));
+        card.addView(chip("Coming Soon", true));
+        card.addView(centerText("Events and servers are on the way", 24, TEXT, true));
+        card.addView(centerText("Community servers, game nights, squad events, and server discovery will live here.", 14, MUTED, false));
+        content.addView(card);
     }
 
     private View chatCard(String title, String body, int accent) {
@@ -420,6 +471,56 @@ public class MainActivity extends Activity {
         row.addView(button("Chat", accent, v -> toast("Chat composer coming next")), new LinearLayout.LayoutParams(dp(88), dp(44)));
         card.addView(row);
         return card;
+    }
+
+    private View conversationCard(JSONObject conversation) {
+        boolean active = conversation.optString("id").equals(selectedConversationId);
+        LinearLayout card = panel(active ? Color.rgb(42, 32, 84) : PANEL, dp(12), dp(10));
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setOnClickListener(v -> openConversation(conversation.optString("id")));
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(avatar(conversation.optString("title", "Chat"), conversation.optString("id").hashCode()), new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(10), 0, 0, 0);
+        copy.addView(text(conversation.optString("title", "Conversation"), 17, TEXT, true));
+        copy.addView(text(conversation.optString("lastMessage", "No messages yet"), 13, MUTED, false));
+        row.addView(copy, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(chip(conversation.optString("type", "direct"), active));
+        card.addView(row);
+        return card;
+    }
+
+    private View messageBubble(JSONObject message) {
+        boolean mine = loggedInHandle.equalsIgnoreCase(message.optString("handle"));
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(mine ? Gravity.RIGHT : Gravity.LEFT);
+        LinearLayout bubble = panel(mine ? Color.rgb(34, 89, 76) : PANEL_ALT, dp(12), dp(8));
+        bubble.setOrientation(LinearLayout.VERTICAL);
+        bubble.setMinimumWidth(dp(190));
+        bubble.addView(text(mine ? "You" : message.optString("handle", "Player"), 13, TEXT, true));
+        bubble.addView(text(message.optString("body", ""), 15, TEXT, false));
+        bubble.addView(text(message.optString("created", ""), 11, MUTED, false));
+        row.addView(bubble, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        return row;
+    }
+
+    private View messageComposer(String conversationId) {
+        LinearLayout card = panel(PANEL, dp(10), dp(12));
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        EditText input = input("Write a message...", "", false);
+        card.addView(input, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(button("Send", GREEN, v -> sendChatMessage(conversationId, input.getText().toString())), new LinearLayout.LayoutParams(dp(90), dp(52)));
+        return card;
+    }
+
+    private JSONObject selectedConversation() {
+        for (int i = 0; latestConversations != null && i < latestConversations.length(); i++) {
+            JSONObject conversation = latestConversations.optJSONObject(i);
+            if (conversation != null && conversation.optString("id").equals(selectedConversationId)) return conversation;
+        }
+        return latestConversations != null && latestConversations.length() > 0 ? latestConversations.optJSONObject(0) : null;
     }
 
     private View feedComposer() {
@@ -468,6 +569,46 @@ public class MainActivity extends Activity {
         return card;
     }
 
+    private View feedPost(JSONObject post) {
+        String type = post.optString("type", "post").toUpperCase();
+        int accent = "clip".equalsIgnoreCase(post.optString("type")) ? PURPLE : GREEN;
+        LinearLayout card = panel(PANEL, dp(14), dp(14));
+        card.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        String author = post.optString("handle", "Player");
+        top.addView(avatar(author, post.optString("id").hashCode()), new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(10), 0, 0, 0);
+        copy.addView(text(author, 16, TEXT, true));
+        copy.addView(text(post.optString("created", "Now") + " - " + post.optString("gameName", "No game"), 12, MUTED, false));
+        top.addView(copy, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        top.addView(chip(type, true));
+        card.addView(top);
+
+        String title = post.optString("title", "");
+        if (!title.isEmpty()) card.addView(text(title, 20, TEXT, true));
+        card.addView(text(post.optString("body", ""), 14, MUTED, false));
+        if ("clip".equalsIgnoreCase(post.optString("type")) || post.optString("mediaType", "").contains("video")) {
+            card.addView(clipPreview(accent));
+        }
+
+        LinearLayout stats = new LinearLayout(this);
+        stats.setGravity(Gravity.CENTER_VERTICAL);
+        stats.addView(text(post.optInt("reactionCount", 0) + " like(s)", 13, MUTED, false), new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        stats.addView(text(post.optInt("commentCount", 0) + " comment(s)", 13, MUTED, false));
+        card.addView(stats);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.addView(button("Like", PANEL_ALT, v -> reactToPost(post.optString("id"))), weighted());
+        actions.addView(button("Comment", PANEL_ALT, v -> toast("Comments are next for Android")), weighted());
+        actions.addView(button("Share", PANEL_ALT, v -> toast("Share sheet coming later")), weighted());
+        card.addView(actions);
+        return card;
+    }
+
     private View clipPreview(int accent) {
         LinearLayout preview = panel(Color.rgb(9, 18, 31), dp(12), dp(10));
         preview.setOrientation(LinearLayout.VERTICAL);
@@ -484,7 +625,7 @@ public class MainActivity extends Activity {
         return preview;
     }
 
-    private View buildHero() {
+    private View buildHero(int current, int total) {
         LinearLayout hero = new LinearLayout(this);
         hero.setOrientation(LinearLayout.VERTICAL);
         hero.setPadding(0, dp(4), 0, dp(4));
@@ -498,7 +639,7 @@ public class MainActivity extends Activity {
         copy.addView(centerText("Discover Players", 18, TEXT, true));
         copy.addView(centerText("We found someone great for your game", 12, MUTED, false));
         row.addView(copy, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        row.addView(iconButton("tune"), new LinearLayout.LayoutParams(dp(42), dp(42)));
+        row.addView(iconButton(current + "/" + total), new LinearLayout.LayoutParams(dp(54), dp(42)));
         hero.addView(row);
         return hero;
     }
@@ -509,9 +650,9 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, dp(12), 0, dp(8));
-        row.addView(chip("A  Apex Legends", true));
-        row.addView(chip("Diamond - Master", false));
-        row.addView(chip("PC", false));
+        row.addView(chip("All Games", true));
+        row.addView(chip("Skill Match", false));
+        row.addView(chip("Any Platform", false));
         row.addView(chip("Crossplay", false));
         scroller.addView(row);
         return scroller;
@@ -536,7 +677,7 @@ public class MainActivity extends Activity {
         nameRow.addView(age);
         nameRow.addView(statusDot(player.optBoolean("online")));
         identity.addView(nameRow);
-        identity.addView(text(player.optString("rank") + "   PC   Australia (AEST)", 14, MUTED, false));
+        identity.addView(text(player.optString("rank") + "   " + joinValues(player.optJSONArray("platforms"), "Any platform") + "   " + player.optString("region", "Unknown"), 14, MUTED, false));
         top.addView(identity, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         card.addView(top);
 
@@ -548,9 +689,9 @@ public class MainActivity extends Activity {
         actions.setGravity(Gravity.CENTER);
         actions.setPadding(0, dp(18), 0, 0);
         String targetId = player.optString("id");
-        actions.addView(actionStack("X", "PASS", PANEL_ALT, v -> toast("Passed for now")), weighted());
+        actions.addView(actionStack("X", "PASS", PANEL_ALT, v -> passDiscoveryPlayer()), weighted());
         actions.addView(actionStack("...", "MORE INFO", PANEL_ALT, v -> toast("Profile preview coming next")), weighted());
-        actions.addView(actionStack("OK", "APPROVE", GREEN, v -> sendConnect(targetId)), weighted());
+        actions.addView(actionStack("OK", "PLAY", GREEN, v -> sendConnect(targetId)), weighted());
         card.addView(actions);
 
         LinearLayout adjust = new LinearLayout(this);
@@ -560,6 +701,16 @@ public class MainActivity extends Activity {
         adjust.addView(chip("Adjust Preferences", false));
         card.addView(adjust);
         return card;
+    }
+
+    private void passDiscoveryPlayer() {
+        int total = latestPlayers == null ? 0 : latestPlayers.length();
+        if (total <= 1) {
+            toast("No more players in this test deck");
+            return;
+        }
+        discoveryIndex = (discoveryIndex + 1) % total;
+        renderCurrentView();
     }
 
     private View mediaPanel(JSONObject player) {
@@ -591,35 +742,6 @@ public class MainActivity extends Activity {
         thumbs.addView(thumb("+3"));
         media.addView(thumbs);
         return media;
-    }
-
-    private View matchPanel(JSONObject player) {
-        LinearLayout card = panel(PANEL, dp(16), dp(14));
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.addView(centerText("OK", 42, GREEN, true));
-        card.addView(centerText("Great Match!", 26, TEXT, true));
-        card.addView(centerText("You and " + player.optString("handle") + " want to play the same game.", 14, MUTED, false));
-
-        LinearLayout faces = new LinearLayout(this);
-        faces.setGravity(Gravity.CENTER);
-        faces.setPadding(0, dp(16), 0, dp(12));
-        faces.addView(avatar(loggedInHandle, 1), new LinearLayout.LayoutParams(dp(68), dp(68)));
-        faces.addView(badge("VS", GREEN, dp(42)));
-        faces.addView(avatar(player.optString("handle"), 2), new LinearLayout.LayoutParams(dp(68), dp(68)));
-        card.addView(faces);
-
-        card.addView(matchReason("Same Game & Mode", "Apex Legends Ranked"));
-        card.addView(matchReason("Similar Rank", "You: Diamond II - Them: " + player.optString("rank")));
-        card.addView(matchReason("Similar Playstyle", "Competitive & Team Player"));
-        card.addView(matchReason("Good Schedule Overlap", "Tonight, 7PM - 11PM (AEST)"));
-
-        card.addView(button("Start Conversation", GREEN, v -> {
-            currentTab = "Messages";
-            renderBottomNav();
-            renderCurrentView();
-        }), matchWrap());
-        card.addView(button("Keep Discovering", PANEL_ALT, v -> toast("Next player queue coming soon")), matchWrap());
-        return card;
     }
 
     private View protectedPanel(JSONObject player) {
@@ -694,24 +816,6 @@ public class MainActivity extends Activity {
         return stack;
     }
 
-    private View matchReason(String title, String body) {
-        LinearLayout row = panel(PANEL_ALT, dp(10), dp(0));
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        TextView icon = badge("OK", GREEN, dp(36));
-        row.addView(icon);
-        LinearLayout copy = new LinearLayout(this);
-        copy.setOrientation(LinearLayout.VERTICAL);
-        copy.setPadding(dp(10), 0, 0, 0);
-        copy.addView(text(title, 14, TEXT, true));
-        copy.addView(text(body, 13, MUTED, false));
-        row.addView(copy, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        LinearLayout.LayoutParams params = matchWrap();
-        params.setMargins(0, 0, 0, dp(8));
-        row.setLayoutParams(params);
-        return row;
-    }
-
     private String formatAccounts(JSONObject accounts) {
         if (accounts == null || accounts.length() == 0) return "No linked accounts yet.";
         StringBuilder builder = new StringBuilder();
@@ -720,6 +824,16 @@ public class MainActivity extends Activity {
             String name = names.optString(i);
             builder.append(name).append(": ").append(accounts.optString(name));
             if (i < names.length() - 1) builder.append("\n");
+        }
+        return builder.toString();
+    }
+
+    private String joinValues(JSONArray values, String fallback) {
+        if (values == null || values.length() == 0) return fallback;
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < values.length(); i++) {
+            if (i > 0) builder.append(", ");
+            builder.append(values.optString(i));
         }
         return builder.toString();
     }
@@ -781,11 +895,95 @@ public class MainActivity extends Activity {
                 payload.put("message", "Want to squad up from Android?");
                 JSONObject response = postJson("/api/connections", payload, sessionToken);
                 String status = response.getJSONObject("connectionRequest").optString("status");
-                runOnUiThread(() -> Toast.makeText(this, "Connection request: " + status, Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Connection request: " + status, Toast.LENGTH_SHORT).show();
+                    passDiscoveryPlayer();
+                });
             } catch (Exception ex) {
                 runOnUiThread(() -> toast("Connect failed: " + ex.getMessage()));
             }
         }).start();
+    }
+
+    private void reactToPost(String postId) {
+        if (sessionToken.isEmpty()) {
+            toast("Log in first to like posts");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                postJson("/api/feed/" + postId + "/react", new JSONObject().put("reaction", "like"), sessionToken);
+                runOnUiThread(() -> {
+                    toast("Liked post");
+                    loadAll();
+                });
+            } catch (Exception ex) {
+                runOnUiThread(() -> toast("Like failed: " + ex.getMessage()));
+            }
+        }).start();
+    }
+
+    private void createTestConversation() {
+        if (sessionToken.isEmpty()) {
+            toast("Log in first to create chats");
+            return;
+        }
+        JSONObject target = firstOtherPlayer();
+        if (target == null) {
+            toast("No other player available for a test chat");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                JSONObject payload = new JSONObject();
+                payload.put("participantPlayerIds", new JSONArray().put(target.optString("id")));
+                payload.put("title", target.optString("handle", "New Chat"));
+                payload.put("message", "Hey, want to squad up?");
+                JSONObject response = postJson("/api/conversations", payload, sessionToken);
+                JSONObject conversation = response.optJSONObject("conversation");
+                selectedConversationId = conversation == null ? "" : conversation.optString("id");
+                runOnUiThread(this::loadAll);
+            } catch (Exception ex) {
+                runOnUiThread(() -> toast("New chat failed: " + ex.getMessage()));
+            }
+        }).start();
+    }
+
+    private void openConversation(String conversationId) {
+        selectedConversationId = conversationId;
+        new Thread(() -> {
+            try {
+                JSONObject messages = getJson("/api/conversations/" + conversationId + "/messages");
+                latestConversationMessages = messages.optJSONArray("messages");
+                runOnUiThread(this::renderCurrentView);
+            } catch (Exception ex) {
+                runOnUiThread(() -> toast("Open chat failed: " + ex.getMessage()));
+            }
+        }).start();
+    }
+
+    private void sendChatMessage(String conversationId, String body) {
+        String cleanBody = body == null ? "" : body.trim();
+        if (cleanBody.isEmpty()) {
+            toast("Write a message first");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                postJson("/api/conversations/" + conversationId + "/messages", new JSONObject().put("body", cleanBody), sessionToken);
+                runOnUiThread(() -> openConversation(conversationId));
+            } catch (Exception ex) {
+                runOnUiThread(() -> toast("Message failed: " + ex.getMessage()));
+            }
+        }).start();
+    }
+
+    private JSONObject firstOtherPlayer() {
+        for (int i = 0; latestPlayers != null && i < latestPlayers.length(); i++) {
+            JSONObject player = latestPlayers.optJSONObject(i);
+            if (player != null && !loggedInHandle.equalsIgnoreCase(player.optString("handle"))) return player;
+        }
+        return null;
     }
 
     private JSONObject getJson(String path) throws Exception {
