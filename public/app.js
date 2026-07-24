@@ -819,9 +819,10 @@ function renderMessages() {
   const selectedConversation = selectedConversationFrom(conversations);
   const selectedProfile = selectedConversation ? selectedConversationProfile(selectedConversation) : null;
   const profilePanelVisible = Boolean(!state.newChatOpen && state.profilePanelOpen && selectedProfile);
+  const mobileView = state.newChatOpen ? "new" : selectedConversation ? (state.messagesMobileView || "list") : "list";
   return page("Messages", "Matched players, direct chats, and group conversations.", `
     ${state.session ? `
-      <div class="message-page-wrap ${state.newChatOpen ? "new-chat-open" : ""} mobile-${escapeAttribute(state.messagesMobileView || "list")}">
+      <div class="message-page-wrap ${state.newChatOpen ? "new-chat-open" : ""} mobile-${escapeAttribute(mobileView)}">
         <div class="messages-shell ${profilePanelVisible ? "profile-open" : ""} ${state.newChatOpen ? "compose-open" : ""}">
           <aside class="messages-side">
             <div class="messages-list-panel">
@@ -855,7 +856,7 @@ function renderMessages() {
             </div>
           </aside>
           <section class="chat-panel">
-            ${selectedConversation ? renderChatThread(selectedConversation) : `<div class="empty">Create a chat or select a conversation.</div>`}
+            ${selectedConversation ? renderChatThread(selectedConversation) : renderNoChatSelected()}
           </section>
           ${state.newChatOpen ? `
             <aside class="new-chat-panel">
@@ -871,6 +872,18 @@ function renderMessages() {
       </div>
     ` : `<div class="card notice"><h3>Sign in required</h3><p>Messages need a Supabase account.</p></div>`}
   `);
+}
+
+function renderNoChatSelected() {
+  return `
+    <div class="chat-thread empty-chat-thread">
+      <div class="empty">
+        <h3>No chat selected</h3>
+        <p>Create a chat or choose one from Messages.</p>
+        <button class="button purple" type="button" data-messages-list>Back To Messages</button>
+      </div>
+    </div>
+  `;
 }
 
 function renderNewChatPopover(acceptedConnectionsList) {
@@ -1987,6 +2000,7 @@ async function startChat(profileId) {
   if (!conversationId) return;
   state.selectedConversationId = conversationId;
   state.newChatOpen = false;
+  state.messagesMobileView = "chat";
   state.tab = "messages";
   await loadData();
 }
@@ -2038,6 +2052,7 @@ async function respondToConnection(connectionId, status) {
   if (error) return alert(error.message);
   if (status === "accepted") {
     state.selectedConversationId = await ensureChat([connection.from_profile_id]);
+    state.messagesMobileView = "chat";
     state.tab = "messages";
   }
   await loadData();
@@ -2054,6 +2069,7 @@ async function createChatFromForm(event) {
   state.selectedConversationId = conversationId;
   state.newChatOpen = false;
   state.tab = "messages";
+  state.messagesMobileView = "chat";
   event.currentTarget.reset();
   await loadData();
 }

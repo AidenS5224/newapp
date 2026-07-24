@@ -943,6 +943,10 @@ button { cursor: pointer; }
     radial-gradient(circle at 50% 0%, rgba(59, 130, 246, .05), transparent 28%),
     linear-gradient(180deg, rgba(9, 18, 31, .94), rgba(5, 9, 18, .98));
 }
+.empty-chat-thread {
+  place-items: center;
+  padding: 18px;
+}
 .chat-head {
   display: flex;
   justify-content: space-between;
