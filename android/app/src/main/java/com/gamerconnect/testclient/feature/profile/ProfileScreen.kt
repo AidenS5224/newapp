@@ -22,44 +22,79 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+
 
 @Composable
 fun ProfileScreen(
     onSignOut: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    profileViewModel: ProfileViewModel = viewModel()
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text(
-            text = "Profile",
-            color = Color.White,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold
-        )
+    val uiState = profileViewModel.uiState.collectAsStateWithLifecycle().value
 
-        ProfileHeader(
-            onSignOut = onSignOut
-        )
+    when {
+        uiState.isLoading -> {
+            Text(
+                text = "Loading profile...",
+                color = Color.White,
+                modifier = modifier.padding(24.dp)
+            )
+        }
 
-        ProfileSection(
-            title = "About",
-            body = "Competitive player looking for reliable teammates."
-        )
+        uiState.errorMessage != null -> {
+            Text(
+                text = uiState.errorMessage,
+                color = MaterialTheme.colorScheme.error,
+                modifier = modifier.padding(24.dp)
+            )
+        }
 
-        ProfileSection(
-            title = "Games",
-            body = "Apex Legends · Rocket League · Fortnite"
-        )
+        uiState.profile != null -> {
+            val profile = uiState.profile
 
-        ProfileSection(
-            title = "Availability",
-            body = "Weeknights · 7 PM to 11 PM"
-        )
+            Column(
+                modifier = modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Profile",
+                    color = Color.White,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                ProfileHeader(
+                    onSignOut = onSignOut
+                )
+
+                ProfileSection(
+                    title = "About",
+                    body = profile.bio.ifBlank {
+                        "No biography added yet."
+                    }
+                )
+
+                ProfileSection(
+                    title = "Games",
+                    body = profile.topGames
+                        .takeIf { it.isNotEmpty() }
+                        ?.joinToString(" · ")
+                        ?: "No games added yet."
+                )
+
+                ProfileSection(
+                    title = "Availability",
+                    body = profile.timezone.ifBlank {
+                        "Availability not set."
+                    }
+                )
+            }
+        }
     }
 }
 
