@@ -1,54 +1,34 @@
-# Gamer Connect Android Test Client
+# Gamer Connect Android Test App
 
 Open this folder in Android Studio.
 
-The project is a simple Java Android client for testing the Raspberry Pi backend:
-
-- configurable API base URL
-- concept-inspired dark Gamer Connect UI
-- sign up and login controls on the Profile tab
-- backend status indicator
-- Feed tab for clips, posts, highlights, and squad updates
-- Discovery/LFG tab with a start screen, reference-style player deck, filters, Pass, More Info, and Play actions
-- Events/Servers tab as a polished Coming Soon page
-- Feed tab reads live posts from `/api/feed` and can like posts when signed in
-- Messages tab reads `/api/conversations`, creates a test direct chat, opens message threads, and sends messages
-- protected Discord/platform info messaging
-- LFG posts
-- squads
-- authenticated connection request button
-
-## Backend URL
-
-Android emulator talking to backend on the Windows host:
+This Android project is a lightweight WebView wrapper for the hosted Gamer Connect app:
 
 ```text
-http://10.0.2.2:8080
+https://newapp-silk.vercel.app
 ```
 
-Real Android phone talking to Raspberry Pi on the same Wi-Fi:
+That means Android tests the same Vercel deployment and Supabase project as the browser app:
 
-```text
-http://PI_IP_ADDRESS:8080
-```
+- Supabase Auth sign in and account creation
+- Supabase database reads/writes
+- Feed posting and media upload
+- Discovery/LFG
+- Messages
+- Profile setup
+- Events/Servers Coming Soon page
 
-The app currently permits cleartext HTTP for local testing. Before real public testing, use HTTPS or a secure tunnel.
+## Run In Android Studio
 
-## Test Login
+1. Open Android Studio.
+2. Choose `File > Open`.
+3. Select the `android` folder in this repo.
+4. Let Gradle sync finish.
+5. Select an emulator or connected Android phone.
+6. Press Run.
 
-```text
-Handle: NovaPulse
-Password: testpass123
-```
+No local backend URL is needed for this version. The app loads Vercel directly and Vercel/Supabase handle the backend.
 
-Open Profile to log in or sign up before tapping Connect. Guest mode can browse discovery, but connection requests and matched-player chats require a session token.
+## Notes
 
-## Current Android Test Flow
-
-1. Start the local backend from `backend` with `python app.py`.
-2. Open `android` in Android Studio.
-3. Run the app on an emulator.
-4. On Profile, use `http://10.0.2.2:8080`, then log in.
-5. Test Discovery/LFG with Start Discovery, Pass, and Play.
-6. Test Feed by liking backend feed posts.
-7. Test Messages with New Test Chat, opening a conversation, and sending a message.
+The WebView has JavaScript, local storage, and file picking enabled so the hosted app can sign in, keep a session, and upload feed media for testing.
