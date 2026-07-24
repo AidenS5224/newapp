@@ -486,7 +486,7 @@ function renderComposer() {
           <option value="">No game</option>
           ${gameOptions.map(game => `<option value="${escapeAttribute(game.id)}">${escapeHtml(game.name)}</option>`).join("")}
         </select>
-        ${gameOptions.length ? "" : `<p class="composer-hint">Add games on your Profile to tag feed posts.</p>`}
+        ${gameOptions.length ? `<p class="composer-hint">Showing games selected on your Profile.</p>` : `<p class="composer-hint">Add games on your Profile to tag feed posts. If you already have games selected, run migration 0013 to seed the games table.</p>`}
         <button class="button green" type="submit">Publish</button>
       </div>
     </form>
@@ -1508,6 +1508,9 @@ async function createPost(event) {
       submitButton.disabled = false;
       submitButton.textContent = "Publish";
     }
+    if (String(error.message || "").toLowerCase().includes("game_id")) {
+      return alert(`${error.message}\n\nRun supabase/migrations/0013_seed_popular_games.sql so selected profile games can be tagged in feed posts.`);
+    }
     return alert(error.message);
   }
   event.currentTarget.reset();
@@ -2026,7 +2029,8 @@ function gameForProfileValue(value) {
   const raw = String(value || "").trim();
   if (!raw) return null;
   const rawKey = normalizeGameLookup(raw);
-  return state.games.find(game => game.id === raw || normalizeGameLookup(game.id) === rawKey || normalizeGameLookup(game.name) === rawKey) || null;
+  const existing = state.games.find(game => game.id === raw || normalizeGameLookup(game.id) === rawKey || normalizeGameLookup(game.name) === rawKey);
+  return existing || { id: rawKey, name: gameLabel(raw) };
 }
 
 function normalizeGameLookup(value) {
