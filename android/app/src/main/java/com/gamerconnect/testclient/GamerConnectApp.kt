@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.gamerconnect.testclient.feature.feed.FeedScreen
 
 private data class AppTab(
     val title: String,
@@ -77,10 +78,16 @@ fun GamerConnectApp() {
             }
         }
     ) { innerPadding ->
-        ScreenPlaceholder(
-            title = tabs[selectedTab].title,
-            modifier = Modifier.padding(innerPadding)
-        )
+        when (selectedTab) {
+            2 -> FeedScreen(
+                modifier = Modifier.padding(innerPadding)
+            )
+
+            else -> ScreenPlaceholder(
+                title = tabs[selectedTab].title,
+                modifier = Modifier.padding(innerPadding)
+            )
+        }
     }
 }
 
