@@ -194,6 +194,38 @@ button { cursor: pointer; }
   align-items: stretch;
   margin-bottom: 14px;
 }
+.message-page-wrap {
+  position: relative;
+}
+.messages-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: -4px 0 12px;
+}
+.new-chat-popover {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  z-index: 20;
+  width: min(360px, 100%);
+  border: 1px solid rgba(126, 89, 255, .55);
+  border-radius: 12px;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(124, 58, 237, .16), transparent 38%),
+    linear-gradient(180deg, rgba(18, 31, 50, .98), rgba(8, 15, 28, .98));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .42);
+}
+.new-chat-popover h3,
+.new-chat-popover p {
+  margin: 0;
+}
+.new-chat-popover .section-head {
+  margin-bottom: 12px;
+}
+.new-chat-popover .section-head p {
+  color: var(--muted);
+}
 .messages-side {
   display: grid;
   min-height: 720px;
@@ -925,6 +957,13 @@ button { cursor: pointer; }
   .auth-layout, .auth-hero { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
   .auth-preview { position: static; }
+  .messages-toolbar { justify-content: stretch; }
+  .messages-toolbar .button { width: 100%; }
+  .new-chat-popover {
+    position: static;
+    width: 100%;
+    margin-bottom: 12px;
+  }
   .messages-shell, .messages-utility-grid { grid-template-columns: 1fr; }
   .messages-side, .chat-panel { min-height: auto; }
   .messages-list-panel { min-height: 420px; }

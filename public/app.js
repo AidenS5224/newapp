@@ -72,6 +72,7 @@ const state = {
   trackerMessage: "",
   profileDraftGames: null,
   selectedConversationId: "",
+  newChatOpen: false,
   ready: false,
   config: null,
   supabase: null,
@@ -463,12 +464,19 @@ function renderFeedPost(post) {
 
 function renderDiscovery() {
   const players = state.profiles.filter(profile => profile.id !== state.profile?.id && !isBlocked(profile.id));
+  const incoming = pendingIncomingConnections();
+  const outgoing = pendingOutgoingConnections();
   return page("Discovery/LFG", "Find players and parties already forming.", `
     <div class="grid two">
       <div>
         ${players.length ? players.map(renderPlayerCard).join("") : `<div class="empty">No other players yet.</div>`}
       </div>
-      <div>
+      <div class="grid">
+        <div class="card">
+          <h3>Connection Requests</h3>
+          ${incoming.length ? incoming.map(renderIncomingConnection).join("") : `<p>No incoming requests.</p>`}
+          ${outgoing.length ? `<p class="muted">${outgoing.length} sent request(s) waiting for approval.</p>` : ""}
+        </div>
         <div class="card">
           <h3>Looking For Group</h3>
           ${state.lfg.length ? state.lfg.map(post => `<p><strong>${escapeHtml(post.title)}</strong><br>${escapeHtml(post.mode || "")} ${escapeHtml(post.starts_at || "")}</p>`).join("") : `<p>No LFG posts yet.</p>`}
@@ -519,76 +527,67 @@ function renderConnectionActions(profile, connection) {
 }
 
 function renderMessages() {
-  const incoming = pendingIncomingConnections();
-  const outgoing = pendingOutgoingConnections();
   const accepted = acceptedConnections();
-  const blocked = blockedProfiles();
   const conversations = visibleConversations();
   const selectedConversation = selectedConversationFrom(conversations);
   const selectedProfile = selectedConversation ? selectedConversationProfile(selectedConversation) : null;
   return page("Messages", "Matched players, direct chats, and group conversations.", `
     ${state.session ? `
-      <div class="messages-shell">
-        <aside class="messages-side">
-          <div class="messages-list-panel">
-            <div class="messages-list-head">
-              <h3>Messages</h3>
-              <button class="icon-button" title="New chat" data-focus-new-chat>+</button>
-            </div>
-            <label class="message-search">
-              <span>Search</span>
-              <input placeholder="Search messages" disabled>
-            </label>
-            <div class="message-tabs">
-              <button class="active" type="button">All</button>
-              <button type="button">Unread <span>${incoming.length}</span></button>
-              <button type="button">Groups</button>
-            </div>
-            <div class="conversation-list">
-              ${conversations.length ? conversations.map(conversation => renderConversationListItem(conversation, selectedConversation?.id)).join("") : `<p>No conversations yet.</p>`}
-            </div>
-            <div class="find-more-card" data-tab="discovery">
-              <strong>Find More Players</strong>
-              <span>Expand your circle</span>
-            </div>
-          </div>
-        </aside>
-        <section class="chat-panel">
-          ${selectedConversation ? renderChatThread(selectedConversation) : `<div class="empty">Create a chat or select a conversation.</div>`}
-        </section>
-        <aside class="chat-profile-panel">
-          ${selectedProfile ? renderChatProfilePanel(selectedProfile, selectedConversation) : renderNewChatAside(accepted)}
-        </aside>
-      </div>
-      <div class="messages-utility-grid">
-        <div class="card new-chat-card" id="new-chat-card">
-          <div class="section-head">
-            <h3>New Chat</h3>
-            <span class="pill">${accepted.length} people</span>
-          </div>
-          ${accepted.length ? renderNewChatForm(accepted) : `<p>Add people first, then start direct or group chats here.</p>`}
+      <div class="message-page-wrap">
+        <div class="messages-toolbar">
+          <button class="button" type="button" data-focus-new-chat>${state.newChatOpen ? "Close New Chat" : "New Chat"}</button>
         </div>
-        <div class="card">
-          <h3>Connection Requests</h3>
-          ${incoming.length ? incoming.map(renderIncomingConnection).join("") : `<p>No incoming requests.</p>`}
-        </div>
-        <div class="card">
-          <h3>Your People</h3>
-          ${accepted.length ? accepted.map(renderAcceptedConnection).join("") : `<p>Accepted players will show here.</p>`}
-          ${outgoing.length ? `<p class="muted">${outgoing.length} sent request(s) waiting for approval.</p>` : ""}
-        </div>
-        <div class="card">
-          <h3>Blocked Players</h3>
-          ${blocked.length ? blocked.map(profile => `
-            <div class="connection-row">
-              <div><strong>${escapeHtml(profile.handle)}</strong><p>Hidden from discovery and messages.</p></div>
-              <button class="button dark" data-unblock="${profile.id}">Unblock</button>
+        ${state.newChatOpen ? renderNewChatPopover(accepted) : ""}
+        <div class="messages-shell">
+          <aside class="messages-side">
+            <div class="messages-list-panel">
+              <div class="messages-list-head">
+                <h3>Messages</h3>
+                <button class="icon-button" title="New chat" data-focus-new-chat>+</button>
+              </div>
+              <label class="message-search">
+                <span>Search</span>
+                <input placeholder="Search messages" disabled>
+              </label>
+              <div class="message-tabs">
+                <button class="active" type="button">All</button>
+                <button type="button">Unread</button>
+                <button type="button">Groups</button>
+              </div>
+              <div class="conversation-list">
+                ${conversations.length ? conversations.map(conversation => renderConversationListItem(conversation, selectedConversation?.id)).join("") : `<p>No conversations yet.</p>`}
+              </div>
+              <div class="find-more-card" data-tab="discovery">
+                <strong>Find More Players</strong>
+                <span>Expand your circle</span>
+              </div>
             </div>
-          `).join("") : `<p>No blocked players.</p>`}
+          </aside>
+          <section class="chat-panel">
+            ${selectedConversation ? renderChatThread(selectedConversation) : `<div class="empty">Create a chat or select a conversation.</div>`}
+          </section>
+          <aside class="chat-profile-panel">
+            ${selectedProfile ? renderChatProfilePanel(selectedProfile, selectedConversation) : renderNewChatAside(accepted)}
+          </aside>
         </div>
       </div>
     ` : `<div class="card notice"><h3>Sign in required</h3><p>Messages need a Supabase account.</p></div>`}
   `);
+}
+
+function renderNewChatPopover(acceptedConnectionsList) {
+  return `
+    <div class="new-chat-popover">
+      <div class="section-head">
+        <div>
+          <h3>New Chat</h3>
+          <p>${acceptedConnectionsList.length} connected player(s)</p>
+        </div>
+        <button class="icon-button" type="button" title="Close new chat" data-close-new-chat>x</button>
+      </div>
+      ${acceptedConnectionsList.length ? renderNewChatForm(acceptedConnectionsList) : `<p>Add people first, then start direct or group chats here.</p>`}
+    </div>
+  `;
 }
 
 function renderIncomingConnection(connection) {
@@ -1057,7 +1056,8 @@ function bindPageEvents() {
   document.querySelectorAll("[data-block]").forEach(button => button.addEventListener("click", () => blockPlayer(button.dataset.block)));
   document.querySelectorAll("[data-unblock]").forEach(button => button.addEventListener("click", () => unblockPlayer(button.dataset.unblock)));
   document.querySelectorAll("[data-select-conversation]").forEach(button => button.addEventListener("click", () => selectConversation(button.dataset.selectConversation)));
-  document.querySelector("[data-focus-new-chat]")?.addEventListener("click", focusNewChat);
+  document.querySelectorAll("[data-focus-new-chat]").forEach(button => button.addEventListener("click", toggleNewChat));
+  document.querySelector("[data-close-new-chat]")?.addEventListener("click", closeNewChat);
   document.querySelector("[data-new-chat-form]")?.addEventListener("submit", createChatFromForm);
   document.querySelectorAll("[data-send-message]").forEach(form => form.addEventListener("submit", sendMessage));
 }
@@ -1397,6 +1397,7 @@ async function startChat(profileId) {
   const conversationId = await ensureChat([profileId]);
   if (!conversationId) return;
   state.selectedConversationId = conversationId;
+  state.newChatOpen = false;
   state.tab = "messages";
   await loadData();
 }
@@ -1462,6 +1463,7 @@ async function createChatFromForm(event) {
   const conversationId = await ensureChat(members, String(form.get("title") || ""), String(form.get("first_message") || ""));
   if (!conversationId) return;
   state.selectedConversationId = conversationId;
+  state.newChatOpen = false;
   state.tab = "messages";
   event.currentTarget.reset();
   await loadData();
@@ -1534,10 +1536,22 @@ function selectConversation(conversationId) {
   renderShell();
 }
 
-function focusNewChat() {
-  const card = document.querySelector("#new-chat-card");
-  card?.scrollIntoView({ behavior: "smooth", block: "center" });
-  card?.querySelector("input[name='title']")?.focus();
+function toggleNewChat() {
+  state.newChatOpen = !state.newChatOpen;
+  renderShell();
+  focusNewChatInput();
+}
+
+function closeNewChat() {
+  state.newChatOpen = false;
+  renderShell();
+}
+
+function focusNewChatInput() {
+  if (!state.newChatOpen) return;
+  window.setTimeout(() => {
+    document.querySelector(".new-chat-popover input[name='title']")?.focus();
+  }, 0);
 }
 
 function profileFor(id) {
