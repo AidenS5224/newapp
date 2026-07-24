@@ -18,11 +18,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+
 
 @Composable
 fun FeedScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    feedViewModel: FeedViewModel = viewModel()
 ) {
+    val uiState = feedViewModel.uiState.collectAsStateWithLifecycle().value
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -57,7 +62,39 @@ fun FeedScreen(
             )
         }
 
-        SamplePostCard()
+        when {
+            uiState.isLoading -> {
+                Text(
+                    text = "Loading feed...",
+                    color = Color.White
+                )
+            }
+
+            uiState.errorMessage != null -> {
+                Text(
+                    text = uiState.errorMessage,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            uiState.posts.isEmpty() -> {
+                Text(
+                    text = "No posts yet.",
+                    color = Color(0xFF9CA3AF)
+                )
+            }
+
+            else -> {
+                uiState.posts.forEach { post ->
+                    FeedPostCard(
+                        title = post.title,
+                        body = post.body,
+                        mediaUrl = post.mediaUrl,
+                        createdAt = post.createdAt
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -90,7 +127,12 @@ private fun FeedTab(
 }
 
 @Composable
-private fun SamplePostCard() {
+private fun FeedPostCard(
+    title: String,
+    body: String,
+    mediaUrl: String?,
+    createdAt: String
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -103,47 +145,43 @@ private fun SamplePostCard() {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = "GhostRider",
+                text = title,
                 color = Color.White,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold
             )
 
             Text(
-                text = "2h ago · Apex Legends",
+                text = createdAt,
                 color = Color(0xFF8D94A3),
                 fontSize = 13.sp
             )
 
             Text(
-                text = "Clutched the 1v3 to win the game 🔥",
+                text = body,
                 color = Color.White,
                 fontSize = 16.sp
             )
 
-            Text(
-                text = "#ApexLegends #Ranked",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 15.sp
-            )
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF111A2B)
-                )
-            ) {
-                Text(
-                    text = "Media preview",
-                    color = Color(0xFF9CA3AF),
-                    modifier = Modifier.padding(
-                        horizontal = 16.dp,
-                        vertical = 70.dp
+            if (!mediaUrl.isNullOrBlank()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFF111A2B)
                     )
-                )
+                ) {
+                    Text(
+                        text = "Media attached",
+                        color = Color(0xFF9CA3AF),
+                        modifier = Modifier.padding(
+                            horizontal = 16.dp,
+                            vertical = 70.dp
+                        )
+                    )
+                }
             }
 
             Row(
@@ -151,17 +189,17 @@ private fun SamplePostCard() {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "♥ 128",
+                    text = "Like",
                     color = MaterialTheme.colorScheme.primary
                 )
 
                 Text(
-                    text = "Comments 24",
+                    text = "Comments",
                     color = Color(0xFFB8BFCC)
                 )
 
                 Text(
-                    text = "Shares 12",
+                    text = "Share",
                     color = Color(0xFFB8BFCC)
                 )
             }
