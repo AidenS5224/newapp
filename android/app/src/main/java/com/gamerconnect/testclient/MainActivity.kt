@@ -18,7 +18,9 @@ class MainActivity : ComponentActivity() {
                 val authState = authViewModel.uiState.collectAsStateWithLifecycle().value
 
                 if (authState.isSignedIn) {
-                    GamerConnectApp()
+                    GamerConnectApp(
+                        onSignOut = authViewModel::signOut
+                    )
                 } else {
                     AuthScreen(
                         onSignIn = authViewModel::signIn,
