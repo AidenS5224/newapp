@@ -75,4 +75,7 @@ dependencies {
     implementation 'io.github.jan-tennert.supabase:auth-kt'
     implementation 'io.github.jan-tennert.supabase:postgrest-kt'
     implementation "io.ktor:ktor-client-android:$ktorVersion"
+
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.7'
 }
