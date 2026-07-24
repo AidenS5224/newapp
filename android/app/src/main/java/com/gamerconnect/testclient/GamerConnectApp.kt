@@ -1,12 +1,5 @@
 package com.gamerconnect.testclient
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -15,40 +8,27 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.gamerconnect.testclient.feature.feed.FeedScreen
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 import com.gamerconnect.testclient.feature.discovery.DiscoveryScreen
+import com.gamerconnect.testclient.feature.feed.FeedScreen
+import com.gamerconnect.testclient.feature.groups.GroupsScreen
 import com.gamerconnect.testclient.feature.messages.MessagesScreen
 import com.gamerconnect.testclient.feature.profile.ProfileScreen
-import com.gamerconnect.testclient.feature.groups.GroupsScreen
-
-
-
-private data class AppTab(
-    val title: String,
-    val symbol: String
-)
+import com.gamerconnect.testclient.navigation.AppDestination
 
 @Composable
 fun GamerConnectApp() {
-    val tabs = listOf(
-        AppTab("Groups", "♟"),
-        AppTab("Discovery", "⌕"),
-        AppTab("Feed", "▣"),
-        AppTab("Messages", "▰"),
-        AppTab("Profile", "♙")
-    )
-
-    var selectedTab by remember { mutableIntStateOf(2) }
+    val navController = rememberNavController()
+    val destinations = AppDestination.bottomNavigationItems
+    val currentBackStackEntry = navController.currentBackStackEntryAsState().value
+    val currentRoute = currentBackStackEntry?.destination?.route
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -56,19 +36,30 @@ fun GamerConnectApp() {
             NavigationBar(
                 containerColor = Color(0xFF070D18)
             ) {
-                tabs.forEachIndexed { index, tab ->
+                destinations.forEach { destination ->
                     NavigationBarItem(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
+                        selected = currentRoute == destination.route,
+                        onClick = {
+                            navController.navigate(destination.route) {
+                                popUpTo(
+                                    navController.graph.findStartDestination().id
+                                ) {
+                                    saveState = true
+                                }
+
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                         icon = {
                             Text(
-                                text = tab.symbol,
+                                text = destination.symbol,
                                 fontSize = 20.sp
                             )
                         },
                         label = {
                             Text(
-                                text = tab.title,
+                                text = destination.label,
                                 fontSize = 10.sp
                             )
                         },
@@ -84,65 +75,30 @@ fun GamerConnectApp() {
             }
         }
     ) { innerPadding ->
-        when (selectedTab) {
-            0 -> GroupsScreen(
-                modifier = Modifier.padding(innerPadding)
-            )
-
-            1 -> DiscoveryScreen(
-                modifier = Modifier.padding(innerPadding)
-            )
-
-            2 -> FeedScreen(
-                modifier = Modifier.padding(innerPadding)
-            )
-
-            3 -> MessagesScreen(
-                modifier = Modifier.padding(innerPadding)
-            )
-
-            4 -> ProfileScreen(
-                modifier = Modifier.padding(innerPadding)
-            )
-        }
-    }
-}
-
-@Composable
-private fun ScreenPlaceholder(
-    title: String,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        NavHost(
+            navController = navController,
+            startDestination = AppDestination.Feed.route,
+            modifier = Modifier.padding(innerPadding)
         ) {
-            Text(
-                text = title,
-                color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
+            composable(AppDestination.Groups.route) {
+                GroupsScreen()
+            }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "$title native screen",
-                color = Color(0xFF9CA3AF),
-                fontSize = 18.sp
-            )
+            composable(AppDestination.Discovery.route) {
+                DiscoveryScreen()
+            }
+
+            composable(AppDestination.Feed.route) {
+                FeedScreen()
+            }
+
+            composable(AppDestination.Messages.route) {
+                MessagesScreen()
+            }
+
+            composable(AppDestination.Profile.route) {
+                ProfileScreen()
+            }
         }
     }
 }
