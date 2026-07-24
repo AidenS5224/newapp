@@ -87,7 +87,10 @@ const state = {
   conversations: [],
   privateProfile: null,
   linkedAccounts: [],
-  messages: {}
+  messages: {},
+  realtimeChannel: null,
+  refreshTimer: null,
+  loadingData: false
 };
 
 const app = document.querySelector("#app");
@@ -104,6 +107,7 @@ async function boot() {
     state.supabase.auth.onAuthStateChange((_event, session) => {
       state.session = session;
       if (session && state.tab === "profile") state.tab = "feed";
+      setupRealtime();
       loadData();
     });
   }
@@ -128,33 +132,40 @@ async function loadData() {
     renderShell();
     return;
   }
-  await ensureProfile();
-  const [profiles, games, feed, lfg, squads] = await Promise.all([
-    read("profiles", "id, handle, display_name, age, region, timezone, platforms, top_games, rank, play_style, availability, bio, avatar_url, online, stats, created_at"),
-    read("games", "*"),
-    read("feed_posts", "*", { order: "created_at" }),
-    read("lfg_posts", "*", { order: "created_at" }),
-    read("squads", "*", { order: "created_at" })
-  ]);
-  state.profiles = profiles || [];
-  state.games = games || [];
-  state.feed = feed || [];
-  state.lfg = lfg || [];
-  state.squads = squads || [];
-  if (state.session) {
-    [state.connections, state.blocks] = await Promise.all([loadConnections(), loadBlocks()]);
-    state.conversations = await loadConversations();
-    state.messages = await loadMessages();
-    await loadPrivateProfile();
-  } else {
-    state.connections = [];
-    state.blocks = [];
-    state.conversations = [];
-    state.messages = {};
-    state.privateProfile = null;
-    state.linkedAccounts = [];
+  if (state.loadingData) return;
+  state.loadingData = true;
+  try {
+    await ensureProfile();
+    const [profiles, games, feed, lfg, squads] = await Promise.all([
+      read("profiles", "id, handle, display_name, age, region, timezone, platforms, top_games, rank, play_style, availability, bio, avatar_url, online, stats, created_at"),
+      read("games", "*"),
+      read("feed_posts", "*", { order: "created_at" }),
+      read("lfg_posts", "*", { order: "created_at" }),
+      read("squads", "*", { order: "created_at" })
+    ]);
+    state.profiles = profiles || [];
+    state.games = games || [];
+    state.feed = feed || [];
+    state.lfg = lfg || [];
+    state.squads = squads || [];
+    if (state.session) {
+      [state.connections, state.blocks] = await Promise.all([loadConnections(), loadBlocks()]);
+      state.conversations = await loadConversations();
+      state.messages = await loadMessages();
+      await loadPrivateProfile();
+    } else {
+      state.connections = [];
+      state.blocks = [];
+      state.conversations = [];
+      state.messages = {};
+      state.privateProfile = null;
+      state.linkedAccounts = [];
+    }
+    setupRealtime();
+    renderShell();
+  } finally {
+    state.loadingData = false;
   }
-  renderShell();
 }
 
 async function read(table, columns = "*", options = {}) {
@@ -252,6 +263,61 @@ async function loadMessages() {
     grouped[message.conversation_id].push(message);
     return grouped;
   }, {});
+}
+
+function setupRealtime() {
+  if (!state.supabase) return;
+  if (!state.session) {
+    teardownRealtime();
+    return;
+  }
+  if (state.realtimeChannel) return;
+  state.realtimeChannel = state.supabase
+    .channel(`gamer-connect-live-${state.session.user.id}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, handleRealtimeChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, handleRealtimeChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "conversation_participants" }, handleRealtimeChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "connections" }, handleRealtimeChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "blocked_profiles" }, handleRealtimeChange)
+    .subscribe(status => {
+      if (["CHANNEL_ERROR", "TIMED_OUT"].includes(status)) console.warn("Realtime status:", status);
+    });
+}
+
+function teardownRealtime() {
+  if (state.refreshTimer) {
+    clearTimeout(state.refreshTimer);
+    state.refreshTimer = null;
+  }
+  if (!state.realtimeChannel || !state.supabase) {
+    state.realtimeChannel = null;
+    return;
+  }
+  state.supabase.removeChannel(state.realtimeChannel);
+  state.realtimeChannel = null;
+}
+
+function handleRealtimeChange(payload) {
+  if (payload.table === "messages" && payload.eventType === "INSERT") {
+    mergeRealtimeMessage(payload.new);
+    renderShell();
+  }
+  scheduleRealtimeRefresh();
+}
+
+function mergeRealtimeMessage(message) {
+  if (!message?.conversation_id) return;
+  state.messages[message.conversation_id] ||= [];
+  if (state.messages[message.conversation_id].some(existing => existing.id === message.id)) return;
+  state.messages[message.conversation_id].push(message);
+}
+
+function scheduleRealtimeRefresh() {
+  if (state.refreshTimer) clearTimeout(state.refreshTimer);
+  state.refreshTimer = setTimeout(() => {
+    state.refreshTimer = null;
+    loadData();
+  }, 350);
 }
 
 async function loadPrivateProfile() {
@@ -600,7 +666,7 @@ function renderMessageBubble(message) {
     <div class="message-bubble ${mine ? "mine" : ""}">
       <strong>${escapeHtml(mine ? "You" : sender?.handle || "Player")}</strong>
       <p>${escapeHtml(message.body)}</p>
-      <span>${escapeHtml(formatShortDate(message.created_at))}</span>
+      <span>${escapeHtml(message.pending ? "Sending..." : formatShortDate(message.created_at))}</span>
     </div>
   `;
 }
@@ -1338,23 +1404,40 @@ async function sendMessage(event) {
   event.preventDefault();
   if (!state.profile) return alert("Sign in first.");
   const form = new FormData(event.currentTarget);
-  const body = form.get("body");
+  const body = String(form.get("body") || "").trim();
   const conversationId = event.currentTarget.dataset.sendMessage;
+  if (!body) return;
   if (isConversationBlocked(conversationId)) {
     alert("Unblock this player before sending messages.");
     return;
   }
+  const tempId = `pending-${Date.now()}`;
+  mergeRealtimeMessage({
+    id: tempId,
+    conversation_id: conversationId,
+    sender_profile_id: state.profile.id,
+    body,
+    created_at: new Date().toISOString(),
+    pending: true
+  });
+  state.selectedConversationId = conversationId;
+  event.currentTarget.reset();
+  renderShell();
   const { error } = await state.supabase.rpc("send_chat_message", {
     target_conversation_id: conversationId,
     message_body: body
   });
   if (error) {
+    removeOptimisticMessage(conversationId, tempId);
+    renderShell();
     alert(`${error.message}\n\nIf this mentions send_chat_message, run supabase/migrations/0008_chat_message_rpc.sql in Supabase SQL Editor.`);
     return;
   }
-  state.selectedConversationId = conversationId;
-  event.currentTarget.reset();
   await loadData();
+}
+
+function removeOptimisticMessage(conversationId, messageId) {
+  state.messages[conversationId] = (state.messages[conversationId] || []).filter(message => message.id !== messageId);
 }
 
 function selectConversation(conversationId) {
