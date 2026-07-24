@@ -817,29 +817,32 @@ function renderMessages() {
   const conversations = visibleConversations();
   const selectedConversation = selectedConversationFrom(conversations);
   const selectedProfile = selectedConversation ? selectedConversationProfile(selectedConversation) : null;
-  const profilePanelVisible = Boolean(state.profilePanelOpen && selectedProfile);
+  const profilePanelVisible = Boolean(!state.newChatOpen && state.profilePanelOpen && selectedProfile);
   return page("Messages", "Matched players, direct chats, and group conversations.", `
     ${state.session ? `
-      <div class="message-page-wrap">
-        <div class="messages-toolbar">
-          <button class="button" type="button" data-focus-new-chat>${state.newChatOpen ? "Close New Chat" : "New Chat"}</button>
-        </div>
-        ${state.newChatOpen ? renderNewChatPopover(accepted) : ""}
-        <div class="messages-shell ${profilePanelVisible ? "profile-open" : ""}">
+      <div class="message-page-wrap ${state.newChatOpen ? "new-chat-open" : ""}">
+        <div class="messages-shell ${profilePanelVisible ? "profile-open" : ""} ${state.newChatOpen ? "compose-open" : ""}">
           <aside class="messages-side">
             <div class="messages-list-panel">
               <div class="messages-list-head">
-                <h3>Messages</h3>
-                <button class="icon-button" title="New chat" data-focus-new-chat>+</button>
+                <div>
+                  <span>MESSAGES</span>
+                  <h3>Messages</h3>
+                </div>
+                <div class="messages-head-actions">
+                  <button class="icon-button small" title="Filters" type="button">Tune</button>
+                  <button class="icon-button purple" title="New chat" data-focus-new-chat>New</button>
+                </div>
               </div>
               <label class="message-search">
                 <span>Search</span>
-                <input placeholder="Search messages" disabled>
+                <input placeholder="Search" disabled>
               </label>
               <div class="message-tabs">
                 <button class="active" type="button">All</button>
                 <button type="button">Unread</button>
                 <button type="button">Groups</button>
+                <button type="button">Requests</button>
               </div>
               <div class="conversation-list">
                 ${conversations.length ? conversations.map(conversation => renderConversationListItem(conversation, selectedConversation?.id)).join("") : `<p>No conversations yet.</p>`}
@@ -853,6 +856,11 @@ function renderMessages() {
           <section class="chat-panel">
             ${selectedConversation ? renderChatThread(selectedConversation) : `<div class="empty">Create a chat or select a conversation.</div>`}
           </section>
+          ${state.newChatOpen ? `
+            <aside class="new-chat-panel">
+              ${renderNewChatPopover(accepted)}
+            </aside>
+          ` : ""}
           ${profilePanelVisible ? `
             <aside class="chat-profile-panel">
               ${renderChatProfilePanel(selectedProfile, selectedConversation)}
@@ -867,12 +875,10 @@ function renderMessages() {
 function renderNewChatPopover(acceptedConnectionsList) {
   return `
     <div class="new-chat-popover">
-      <div class="section-head">
-        <div>
-          <h3>New Chat</h3>
-          <p>${acceptedConnectionsList.length} connected player(s)</p>
-        </div>
+      <div class="new-chat-head">
         <button class="icon-button" type="button" title="Close new chat" data-close-new-chat>x</button>
+        <h3>New Chat</h3>
+        <span>${acceptedConnectionsList.length}</span>
       </div>
       ${acceptedConnectionsList.length ? renderNewChatForm(acceptedConnectionsList) : `<p>Add people first, then start direct or group chats here.</p>`}
     </div>
@@ -918,7 +924,7 @@ function renderNewChatForm(acceptedConnectionsList) {
       </div>
       <label>Chat Title<input class="field" name="title" placeholder="Optional group name"></label>
       <div class="new-chat-suggested-head">
-        <span>Suggested</span>
+        <span>SUGGESTED</span>
         <small>${people.length} available</small>
       </div>
       <div class="chat-picker suggested-picker">
@@ -934,7 +940,11 @@ function renderNewChatForm(acceptedConnectionsList) {
         `).join("")}
       </div>
       <label>First Message<input class="field" name="first_message" placeholder="Optional first message"></label>
-      <button class="button purple" type="submit">Chat</button>
+      <div class="selected-chat-preview">
+        ${people.slice(0, 2).map(profile => `<span>${escapeHtml(profile.handle)} <small>x</small></span>`).join("")}
+      </div>
+      <button class="button purple" type="submit">Create Chat</button>
+      <button class="button dark" type="button">Create Group Chat</button>
     </form>
   `;
 }
@@ -992,8 +1002,8 @@ function renderChatThread(conversation) {
           </div>
         </button>
         <div class="chat-actions">
-          <button class="icon-button" title="Video" type="button">Vid</button>
           <button class="icon-button" title="Call" type="button">Call</button>
+          <button class="icon-button" title="Video" type="button">Vid</button>
           <button class="icon-button" title="Info" type="button" data-toggle-chat-profile>Info</button>
           <button class="icon-button danger" title="Delete conversation" type="button" data-delete-conversation="${conversation.id}">Del</button>
         </div>
