@@ -14,3 +14,4 @@ android/.idea/modules/
 android/.kotlin/
 android/*.hprof
 android/.idea/deploymentTargetSelector.xml
+.idea/
