@@ -20,11 +20,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun MessagesScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    messagesViewModel: MessagesViewModel = viewModel()
 ) {
+    val uiState = messagesViewModel.uiState.collectAsStateWithLifecycle().value
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -41,26 +45,43 @@ fun MessagesScreen(
 
         MessageFilterRow()
 
-        ConversationCard(
-            name = "ZaneFPS",
-            preview = "Yooo that was a crazy game 🔥",
-            time = "2m ago",
-            unreadCount = 2
-        )
+        when {
+            uiState.isLoading -> {
+                Text(
+                    text = "Loading conversations...",
+                    color = Color.White
+                )
+            }
 
-        ConversationCard(
-            name = "Rocket Squad",
-            preview = "TurboTom: I'm down to play tonight",
-            time = "15m ago",
-            unreadCount = 5
-        )
+            uiState.errorMessage != null -> {
+                Text(
+                    text = uiState.errorMessage,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
 
-        ConversationCard(
-            name = "NovaPulse",
-            preview = "You: No worries. GG!",
-            time = "1h ago",
-            unreadCount = 0
-        )
+            uiState.conversations.isEmpty() -> {
+                Text(
+                    text = "No conversations yet.",
+                    color = Color(0xFF9CA3AF)
+                )
+            }
+
+            else -> {
+                uiState.conversations.forEach { conversation ->
+                    ConversationCard(
+                        name = conversation.title,
+                        preview = if (conversation.conversationType == "group") {
+                            "LFG group chat"
+                        } else {
+                            "Direct conversation"
+                        },
+                        time = "",
+                        unreadCount = 0
+                    )
+                }
+            }
+        }
     }
 }
 
