@@ -8,6 +8,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+
 
 @Serializable
 private data class CreateLfgPostRequest(
@@ -40,6 +45,12 @@ private data class CreateLfgJoinRequest(
     val status: String = "pending"
 )
 
+@Serializable
+private data class AcceptLfgJoinRequestParams(
+    @SerialName("request_id")
+    val requestId: String
+)
+
 class LfgRepository {
 
     suspend fun acceptJoinRequest(
@@ -49,17 +60,12 @@ class LfgRepository {
             "Request ID is required."
         }
 
-        client
-            .from("lfg_join_requests")
-            .update(
-                buildJsonObject {
-                    put("status", "accepted")
-                }
-            ) {
-                filter {
-                    eq("id", requestId)
-                }
+        client.postgrest.rpc(
+            function = "accept_lfg_join_request",
+            parameters = buildJsonObject {
+                put("request_id", requestId)
             }
+        )
     }
 
     suspend fun rejectJoinRequest(
