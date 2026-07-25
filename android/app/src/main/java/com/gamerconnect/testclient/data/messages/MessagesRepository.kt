@@ -6,6 +6,14 @@ import io.github.jan.supabase.postgrest.from
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.realtime.PostgresAction
+import io.github.jan.supabase.realtime.postgresChangeFlow
+import io.github.jan.supabase.realtime.realtime
+import kotlinx.coroutines.flow.Flow
+import io.github.jan.supabase.realtime.channel
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 
 
 @Serializable
@@ -26,6 +34,38 @@ private data class CreateMessageRequest(
 )
 
 class MessagesRepository {
+
+    fun observeInsertedMessages(
+        conversationId: String
+    ): Flow<Unit> = callbackFlow {
+        require(conversationId.isNotBlank()) {
+            "Conversation ID is required."
+        }
+
+        client.realtime.connect()
+
+        val channel = client.realtime.channel(
+            channelId = "messages-$conversationId"
+        )
+
+        val changes = channel.postgresChangeFlow<PostgresAction.Insert>(
+            schema = "public"
+        ) {
+            table = "messages"
+        }
+
+        val collectionJob = launch {
+            changes.collect {
+                trySend(Unit)
+            }
+        }
+
+        channel.subscribe(blockUntilSubscribed = true)
+
+        awaitClose {
+            collectionJob.cancel()
+        }
+    }
 
     suspend fun sendMessage(
         conversationId: String,
