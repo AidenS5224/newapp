@@ -25,6 +25,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun MessagesScreen(
+    onConversationClick: (
+        conversationId: String,
+        conversationTitle: String
+    ) -> Unit,
     modifier: Modifier = Modifier,
     messagesViewModel: MessagesViewModel = viewModel()
 ) {
@@ -77,7 +81,13 @@ fun MessagesScreen(
                             "Direct conversation"
                         },
                         time = "",
-                        unreadCount = 0
+                        unreadCount = 0,
+                        onClick = {
+                            onConversationClick(
+                                conversation.id,
+                                conversation.title
+                            )
+                        }
                     )
                 }
             }
@@ -130,9 +140,11 @@ private fun ConversationCard(
     name: String,
     preview: String,
     time: String,
-    unreadCount: Int
+    unreadCount: Int,
+    onClick: () -> Unit
 ) {
     Card(
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(

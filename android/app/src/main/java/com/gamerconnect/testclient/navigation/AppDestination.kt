@@ -29,6 +29,19 @@ sealed class AppDestination(
         symbol = "▰"
     )
 
+    data object Chat : AppDestination(
+        route = "chat/{conversationId}/{conversationTitle}",
+        label = "Chat",
+        symbol = ""
+    ) {
+        fun createRoute(
+            conversationId: String,
+            conversationTitle: String
+        ): String {
+            return "chat/$conversationId/$conversationTitle"
+        }
+    }
+
     data object Profile : AppDestination(
         route = "profile",
         label = "Profile",
