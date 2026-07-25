@@ -108,6 +108,8 @@ class ChatViewModel(
             runCatching {
                 repository.getMessages(conversationId)
             }.onSuccess { messages ->
+                repository.markConversationAsRead(conversationId)
+
                 _uiState.update {
                     it.copy(
                         messages = messages,

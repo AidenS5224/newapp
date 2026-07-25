@@ -14,7 +14,7 @@ import io.github.jan.supabase.realtime.channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
-
+import java.time.Instant
 
 @Serializable
 private data class ConversationParticipantRow(
@@ -33,7 +33,39 @@ private data class CreateMessageRequest(
     val body: String
 )
 
+@Serializable
+private data class UpdateReadTimestampRequest(
+    @SerialName("last_read_at")
+    val lastReadAt: String
+)
+
+
+
 class MessagesRepository {
+
+    suspend fun markConversationAsRead(
+        conversationId: String
+    ) {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+
+        require(conversationId.isNotBlank()) {
+            "Conversation ID is required."
+        }
+
+        client
+            .from("conversation_participants")
+            .update(
+                UpdateReadTimestampRequest(
+                    lastReadAt = Instant.now().toString()
+                )
+            ) {
+                filter {
+                    eq("conversation_id", conversationId)
+                    eq("profile_id", userId)
+                }
+            }
+    }
 
     fun observeInsertedMessages(
         conversationId: String
