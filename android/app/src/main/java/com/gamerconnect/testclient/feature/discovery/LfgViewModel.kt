@@ -14,13 +14,50 @@ data class LfgUiState(
     val posts: List<LfgPost> = emptyList(),
     val isLoading: Boolean = true,
     val isCreating: Boolean = false,
+    val requestingPostId: String? = null,
+    val requestedPostIds: Set<String> = emptySet(),
     val errorMessage: String? = null,
-    val creationMessage: String? = null
+    val creationMessage: String? = null,
+    val joinRequestMessage: String? = null
 )
 
 class LfgViewModel(
     private val repository: LfgRepository = LfgRepository()
 ) : ViewModel() {
+
+    fun requestToJoin(
+        lfgPostId: String
+    ) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    requestingPostId = lfgPostId,
+                    errorMessage = null,
+                    joinRequestMessage = null
+                )
+            }
+
+            runCatching {
+                repository.requestToJoin(lfgPostId)
+            }.onSuccess {
+                _uiState.update {
+                    it.copy(
+                        requestingPostId = null,
+                        requestedPostIds = it.requestedPostIds + lfgPostId,
+                        joinRequestMessage = "Join request sent."
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        requestingPostId = null,
+                        errorMessage = error.message
+                            ?: "Unable to send join request."
+                    )
+                }
+            }
+        }
+    }
 
     fun createPost(
         title: String,

@@ -116,7 +116,14 @@ fun DiscoveryScreen(
 
                     else -> {
                         lfgState.posts.forEach { post ->
-                            LfgPostCard(post = post)
+                            LfgPostCard(
+                                post = post,
+                                isRequesting = lfgState.requestingPostId == post.id,
+                                isRequested = post.id in lfgState.requestedPostIds,
+                                onRequestToJoin = {
+                                    lfgViewModel.requestToJoin(post.id)
+                                }
+                            )
                         }
                     }
                 }
@@ -200,7 +207,10 @@ private fun DiscoveryTab(
 
 @Composable
 private fun LfgPostCard(
-    post: LfgPost
+    post: LfgPost,
+    isRequesting: Boolean,
+    isRequested: Boolean,
+    onRequestToJoin: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -251,13 +261,22 @@ private fun LfgPostCard(
             }
 
             Button(
-                onClick = {},
+                onClick = onRequestToJoin,
+                enabled = !isRequesting && !isRequested,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
+                    containerColor = if (isRequested) {
+                        Color(0xFF1F2937)
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
                 )
             ) {
                 Text(
-                    text = "Request to Join",
+                    text = when {
+                        isRequesting -> "Sending..."
+                        isRequested -> "Requested"
+                        else -> "Request to Join"
+                    },
                     color = Color.White
                 )
             }
