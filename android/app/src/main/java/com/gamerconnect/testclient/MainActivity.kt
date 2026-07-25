@@ -15,19 +15,28 @@ class MainActivity : ComponentActivity() {
         setContent {
             GamerConnectTheme {
                 val authViewModel: AuthViewModel = viewModel()
-                val authState = authViewModel.uiState.collectAsStateWithLifecycle().value
+                val authState =
+                    authViewModel.uiState.collectAsStateWithLifecycle().value
 
-                if (authState.isSignedIn) {
-                    GamerConnectApp(
-                        onSignOut = authViewModel::signOut
-                    )
-                } else {
-                    AuthScreen(
-                        onSignIn = authViewModel::signIn,
-                        onSignUp = authViewModel::signUp,
-                        isLoading = authState.isLoading,
-                        errorMessage = authState.errorMessage
-                    )
+                when {
+                    !authState.isInitialized -> {
+                        // Waiting for the saved session to restore.
+                    }
+
+                    authState.isSignedIn -> {
+                        GamerConnectApp(
+                            onSignOut = authViewModel::signOut
+                        )
+                    }
+
+                    else -> {
+                        AuthScreen(
+                            onSignIn = authViewModel::signIn,
+                            onSignUp = authViewModel::signUp,
+                            isLoading = authState.isLoading,
+                            errorMessage = authState.errorMessage
+                        )
+                    }
                 }
             }
         }
