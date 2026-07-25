@@ -6,6 +6,8 @@ import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.auth.auth
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 @Serializable
 private data class CreateLfgPostRequest(
@@ -39,6 +41,81 @@ private data class CreateLfgJoinRequest(
 )
 
 class LfgRepository {
+
+    suspend fun acceptJoinRequest(
+        requestId: String
+    ) {
+        require(requestId.isNotBlank()) {
+            "Request ID is required."
+        }
+
+        client
+            .from("lfg_join_requests")
+            .update(
+                buildJsonObject {
+                    put("status", "accepted")
+                }
+            ) {
+                filter {
+                    eq("id", requestId)
+                }
+            }
+    }
+
+    suspend fun rejectJoinRequest(
+        requestId: String
+    ) {
+        require(requestId.isNotBlank()) {
+            "Request ID is required."
+        }
+
+        client
+            .from("lfg_join_requests")
+            .update(
+                buildJsonObject {
+                    put("status", "rejected")
+                }
+            ) {
+                filter {
+                    eq("id", requestId)
+                }
+            }
+    }
+
+    suspend fun getPendingRequestsForOwnedPosts(): List<LfgJoinRequest> {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+
+        val ownedPosts = client
+            .from("lfg_posts")
+            .select {
+                filter {
+                    eq("profile_id", userId)
+                }
+            }
+            .decodeList<LfgPost>()
+
+        if (ownedPosts.isEmpty()) {
+            return emptyList()
+        }
+
+        val ownedPostIds = ownedPosts.map { it.id }
+
+        return client
+            .from("lfg_join_requests")
+            .select {
+                filter {
+                    isIn("lfg_post_id", ownedPostIds)
+                    eq("status", "pending")
+                }
+
+                order(
+                    column = "created_at",
+                    order = Order.ASCENDING
+                )
+            }
+            .decodeList<LfgJoinRequest>()
+    }
 
     suspend fun requestToJoin(
         lfgPostId: String

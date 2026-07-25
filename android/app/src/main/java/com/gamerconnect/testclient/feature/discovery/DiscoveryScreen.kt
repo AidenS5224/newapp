@@ -32,7 +32,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.gamerconnect.testclient.data.lfg.LfgPost
-
+import com.gamerconnect.testclient.data.lfg.LfgJoinRequest
 
 @Composable
 fun DiscoveryScreen(
@@ -165,12 +165,42 @@ fun DiscoveryScreen(
             }
 
             2 -> {
-                CreateLfgForm(
-                    isCreating = lfgState.isCreating,
-                    errorMessage = lfgState.errorMessage,
-                    creationMessage = lfgState.creationMessage,
-                    onCreate = lfgViewModel::createPost
-                )
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CreateLfgForm(
+                        isCreating = lfgState.isCreating,
+                        errorMessage = lfgState.errorMessage,
+                        creationMessage = lfgState.creationMessage,
+                        onCreate = lfgViewModel::createPost
+                    )
+
+                    Text(
+                        text = "Pending Join Requests",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    if (lfgState.pendingOwnerRequests.isEmpty()) {
+                        Text(
+                            text = "No pending requests.",
+                            color = Color(0xFF9CA3AF)
+                        )
+                    } else {
+                        lfgState.pendingOwnerRequests.forEach { request ->
+                            OwnerJoinRequestCard(
+                                request = request,
+                                onAccept = {
+                                    lfgViewModel.acceptJoinRequest(request.id)
+                                },
+                                onReject = {
+                                    lfgViewModel.rejectJoinRequest(request.id)
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -206,12 +236,86 @@ private fun DiscoveryTab(
 }
 
 @Composable
+private fun OwnerJoinRequestCard(
+    request: LfgJoinRequest,
+    onAccept: () -> Unit,
+    onReject: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF0B1220)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "New join request",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = "Requester: ${request.requesterProfileId}",
+                color = Color(0xFFB8BFCC),
+                fontSize = 13.sp
+            )
+
+            Text(
+                text = "LFG post: ${request.lfgPostId}",
+                color = Color(0xFF8D94A3),
+                fontSize = 12.sp
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(
+                    onClick = onAccept,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF15803D)
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Accept",
+                        color = Color.White
+                    )
+                }
+
+                Button(
+                    onClick = onReject,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF7F1D1D)
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Reject",
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
 private fun LfgPostCard(
     post: LfgPost,
     isRequesting: Boolean,
     isRequested: Boolean,
     onRequestToJoin: () -> Unit
 ) {
+
+
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),

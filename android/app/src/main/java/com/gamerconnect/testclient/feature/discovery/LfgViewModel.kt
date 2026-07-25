@@ -9,9 +9,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.gamerconnect.testclient.data.lfg.LfgJoinRequest
 
 data class LfgUiState(
     val posts: List<LfgPost> = emptyList(),
+    val pendingOwnerRequests: List<LfgJoinRequest> = emptyList(),
     val isLoading: Boolean = true,
     val isCreating: Boolean = false,
     val requestingPostId: String? = null,
@@ -24,6 +26,65 @@ data class LfgUiState(
 class LfgViewModel(
     private val repository: LfgRepository = LfgRepository()
 ) : ViewModel() {
+
+    fun acceptJoinRequest(
+        requestId: String
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                repository.acceptJoinRequest(requestId)
+            }.onSuccess {
+                loadPendingOwnerRequests()
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        errorMessage = error.message
+                            ?: "Unable to accept join request."
+                    )
+                }
+            }
+        }
+    }
+
+    fun rejectJoinRequest(
+        requestId: String
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                repository.rejectJoinRequest(requestId)
+            }.onSuccess {
+                loadPendingOwnerRequests()
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        errorMessage = error.message
+                            ?: "Unable to reject join request."
+                    )
+                }
+            }
+        }
+    }
+
+    fun loadPendingOwnerRequests() {
+        viewModelScope.launch {
+            runCatching {
+                repository.getPendingRequestsForOwnedPosts()
+            }.onSuccess { requests ->
+                _uiState.update {
+                    it.copy(
+                        pendingOwnerRequests = requests
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        errorMessage = error.message
+                            ?: "Unable to load pending requests."
+                    )
+                }
+            }
+        }
+    }
 
     fun requestToJoin(
         lfgPostId: String
@@ -109,6 +170,7 @@ class LfgViewModel(
 
     init {
         loadPosts()
+        loadPendingOwnerRequests()
     }
 
     fun loadPosts() {
