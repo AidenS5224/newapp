@@ -27,8 +27,54 @@ private data class CreateLfgPostRequest(
     val status: String = "open"
 )
 
+@Serializable
+private data class CreateLfgJoinRequest(
+    @SerialName("lfg_post_id")
+    val lfgPostId: String,
+
+    @SerialName("requester_profile_id")
+    val requesterProfileId: String,
+
+    val status: String = "pending"
+)
 
 class LfgRepository {
+
+    suspend fun requestToJoin(
+        lfgPostId: String
+    ) {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+
+        require(lfgPostId.isNotBlank()) {
+            "LFG post ID is required."
+        }
+
+        val existingRequests = client
+            .from("lfg_join_requests")
+            .select {
+                filter {
+                    eq("lfg_post_id", lfgPostId)
+                    eq("requester_profile_id", userId)
+                }
+
+                limit(1)
+            }
+            .decodeList<LfgJoinRequest>()
+
+        if (existingRequests.isNotEmpty()) {
+            return
+        }
+
+        client
+            .from("lfg_join_requests")
+            .insert(
+                CreateLfgJoinRequest(
+                    lfgPostId = lfgPostId,
+                    requesterProfileId = userId
+                )
+            )
+    }
 
     suspend fun createLfgPost(
         title: String,
