@@ -1,0 +1,20 @@
+package com.gamerconnect.testclient.data.messages
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class ChatMessage(
+    val id: String,
+
+    @SerialName("conversation_id")
+    val conversationId: String,
+
+    @SerialName("sender_profile_id")
+    val senderProfileId: String,
+
+    val body: String,
+
+    @SerialName("created_at")
+    val createdAt: String
+)

@@ -22,14 +22,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 
 @Composable
 fun ChatScreen(
     conversationId: String,
     conversationTitle: String,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    chatViewModel: ChatViewModel = viewModel()
 ) {
+    val uiState = chatViewModel.uiState.collectAsStateWithLifecycle().value
+
+    LaunchedEffect(conversationId) {
+        chatViewModel.loadMessages(conversationId)
+    }
+
     var messageText by remember {
         mutableStateOf("")
     }
@@ -68,10 +82,37 @@ fun ChatScreen(
                 fontSize = 12.sp
             )
 
-            Text(
-                text = "Messages will appear here.",
-                color = Color(0xFFB8BFCC)
-            )
+            when {
+                uiState.isLoading -> {
+                    Text(
+                        text = "Loading messages...",
+                        color = Color.White
+                    )
+                }
+
+                uiState.errorMessage != null -> {
+                    Text(
+                        text = uiState.errorMessage,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                uiState.messages.isEmpty() -> {
+                    Text(
+                        text = "No messages yet.",
+                        color = Color(0xFFB8BFCC)
+                    )
+                }
+
+                else -> {
+                    uiState.messages.forEach { message ->
+                        MessageBubble(
+                            body = message.body,
+                            isCurrentUser = message.senderProfileId == uiState.currentUserId
+                        )
+                    }
+                }
+            }
         }
 
         Row(
@@ -91,19 +132,66 @@ fun ChatScreen(
 
             Button(
                 onClick = {
+                    chatViewModel.sendMessage(
+                        conversationId = conversationId,
+                        body = messageText
+                    )
+
                     messageText = ""
                 },
-                enabled = messageText.isNotBlank(),
+                enabled = messageText.isNotBlank() && !uiState.isSending,
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
                 Text(
-                    text = "Send",
+                    text = if (uiState.isSending) {
+                        "Sending..."
+                    } else {
+                        "Send"
+                    },
                     color = Color.White
                 )
             }
+        }
+    }
+}
+@Composable
+private fun MessageBubble(
+    body: String,
+    isCurrentUser: Boolean
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = if (isCurrentUser) {
+            Alignment.CenterEnd
+        } else {
+            Alignment.CenterStart
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .background(
+                    color = if (isCurrentUser) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        Color(0xFF111827)
+                    },
+                    shape = RoundedCornerShape(18.dp)
+                )
+                .padding(
+                    horizontal = 14.dp,
+                    vertical = 10.dp
+                )
+        ) {
+            Text(
+                text = body,
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Normal
+            )
         }
     }
 }
