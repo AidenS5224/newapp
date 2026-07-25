@@ -22,7 +22,10 @@ import com.gamerconnect.testclient.feature.groups.GroupsScreen
 import com.gamerconnect.testclient.feature.messages.MessagesScreen
 import com.gamerconnect.testclient.feature.profile.ProfileScreen
 import com.gamerconnect.testclient.navigation.AppDestination
-
+import android.net.Uri
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import com.gamerconnect.testclient.feature.messages.ChatScreen
 
 @Composable
 fun GamerConnectApp(
@@ -96,7 +99,45 @@ fun GamerConnectApp(
             }
 
             composable(AppDestination.Messages.route) {
-                MessagesScreen()
+                MessagesScreen(
+                    onConversationClick = { conversationId, conversationTitle ->
+                        navController.navigate(
+                            AppDestination.Chat.createRoute(
+                                conversationId = conversationId,
+                                conversationTitle = Uri.encode(conversationTitle)
+                            )
+                        )
+                    }
+                )
+            }
+
+            composable(
+                route = AppDestination.Chat.route,
+                arguments = listOf(
+                    navArgument("conversationId") {
+                        type = NavType.StringType
+                    },
+                    navArgument("conversationTitle") {
+                        type = NavType.StringType
+                    }
+                )
+            ) { backStackEntry ->
+                val conversationId =
+                    backStackEntry.arguments?.getString("conversationId")
+                        ?: return@composable
+
+                val conversationTitle = Uri.decode(
+                    backStackEntry.arguments?.getString("conversationTitle")
+                        ?: "Chat"
+                )
+
+                ChatScreen(
+                    conversationId = conversationId,
+                    conversationTitle = conversationTitle,
+                    onBack = {
+                        navController.popBackStack()
+                    }
+                )
             }
 
             composable(AppDestination.Profile.route) {
