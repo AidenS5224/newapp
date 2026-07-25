@@ -158,9 +158,11 @@ fun DiscoveryScreen(
             }
 
             2 -> {
-                Text(
-                    text = "My LFG posts will appear here.",
-                    color = Color(0xFF9CA3AF)
+                CreateLfgForm(
+                    isCreating = lfgState.isCreating,
+                    errorMessage = lfgState.errorMessage,
+                    creationMessage = lfgState.creationMessage,
+                    onCreate = lfgViewModel::createPost
                 )
             }
         }
