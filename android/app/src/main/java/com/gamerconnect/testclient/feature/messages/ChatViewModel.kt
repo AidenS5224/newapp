@@ -24,6 +24,30 @@ class ChatViewModel(
     private val repository: MessagesRepository = MessagesRepository()
 ) : ViewModel() {
 
+    private var realtimeJob: kotlinx.coroutines.Job? = null
+
+    fun observeMessages(
+        conversationId: String
+    ) {
+        realtimeJob?.cancel()
+
+        realtimeJob = viewModelScope.launch {
+            runCatching {
+                repository.observeInsertedMessages(conversationId)
+                    .collect {
+                        loadMessages(conversationId)
+                    }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        errorMessage = error.message
+                            ?: "Realtime message updates stopped."
+                    )
+                }
+            }
+        }
+    }
+
     fun sendMessage(
         conversationId: String,
         body: String

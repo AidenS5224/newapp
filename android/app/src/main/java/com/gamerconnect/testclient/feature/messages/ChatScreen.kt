@@ -29,6 +29,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+
 
 @Composable
 fun ChatScreen(
@@ -38,14 +42,27 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
     chatViewModel: ChatViewModel = viewModel()
 ) {
-    val uiState = chatViewModel.uiState.collectAsStateWithLifecycle().value
-
-    LaunchedEffect(conversationId) {
-        chatViewModel.loadMessages(conversationId)
-    }
+    val uiState = chatViewModel.uiState
+        .collectAsStateWithLifecycle()
+        .value
 
     var messageText by remember {
         mutableStateOf("")
+    }
+
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(conversationId) {
+        chatViewModel.loadMessages(conversationId)
+        chatViewModel.observeMessages(conversationId)
+    }
+
+    LaunchedEffect(uiState.messages.size) {
+        if (uiState.messages.isNotEmpty()) {
+            listState.animateScrollToItem(
+                uiState.messages.lastIndex
+            )
+        }
     }
 
     Column(
@@ -53,62 +70,77 @@ fun ChatScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(16.dp),
-        verticalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        Button(
+            onClick = onBack,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF111827)
+            )
         ) {
-            Button(
-                onClick = onBack,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF111827)
-                )
-            ) {
-                Text(
-                    text = "Back",
-                    color = Color.White
-                )
-            }
-
             Text(
-                text = conversationTitle,
-                color = Color.White,
-                fontSize = 24.sp
+                text = "Back",
+                color = Color.White
             )
+        }
 
-            Text(
-                text = "Conversation ID: $conversationId",
-                color = Color(0xFF8D94A3),
-                fontSize = 12.sp
-            )
+        Text(
+            text = conversationTitle,
+            color = Color.White,
+            fontSize = 24.sp
+        )
 
+        Text(
+            text = "Conversation ID: $conversationId",
+            color = Color(0xFF8D94A3),
+            fontSize = 12.sp
+        )
+
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             when {
                 uiState.isLoading -> {
-                    Text(
-                        text = "Loading messages...",
-                        color = Color.White
-                    )
+                    item {
+                        Text(
+                            text = "Loading messages...",
+                            color = Color.White
+                        )
+                    }
                 }
 
                 uiState.errorMessage != null -> {
-                    Text(
-                        text = uiState.errorMessage,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    item {
+                        Text(
+                            text = uiState.errorMessage,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
 
                 uiState.messages.isEmpty() -> {
-                    Text(
-                        text = "No messages yet.",
-                        color = Color(0xFFB8BFCC)
-                    )
+                    item {
+                        Text(
+                            text = "No messages yet.",
+                            color = Color(0xFFB8BFCC)
+                        )
+                    }
                 }
 
                 else -> {
-                    uiState.messages.forEach { message ->
+                    items(
+                        items = uiState.messages,
+                        key = { message -> message.id }
+                    ) { message ->
                         MessageBubble(
                             body = message.body,
-                            isCurrentUser = message.senderProfileId == uiState.currentUserId
+                            isCurrentUser =
+                                message.senderProfileId ==
+                                        uiState.currentUserId
                         )
                     }
                 }
@@ -117,13 +149,12 @@ fun ChatScreen(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
                 value = messageText,
-                onValueChange = {
-                    messageText = it
-                },
+                onValueChange = { messageText = it },
                 label = {
                     Text("Message")
                 },
@@ -139,10 +170,13 @@ fun ChatScreen(
 
                     messageText = ""
                 },
-                enabled = messageText.isNotBlank() && !uiState.isSending,
+                enabled =
+                    messageText.isNotBlank() &&
+                            !uiState.isSending,
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
+                    containerColor =
+                        MaterialTheme.colorScheme.primary
                 )
             ) {
                 Text(
