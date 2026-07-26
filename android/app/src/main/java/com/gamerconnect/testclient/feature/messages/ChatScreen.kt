@@ -32,7 +32,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import androidx.compose.foundation.lazy.itemsIndexed
 
 @Composable
 fun ChatScreen(
@@ -132,15 +136,38 @@ fun ChatScreen(
                 }
 
                 else -> {
-                    items(
+                    itemsIndexed(
                         items = uiState.messages,
-                        key = { message -> message.id }
-                    ) { message ->
+                        key = { _, message -> message.id }
+                    ) { index, message ->
+                        val currentDateLabel = formatMessageDateLabel(
+                            message.createdAt
+                        )
+
+                        val previousDateLabel = uiState.messages
+                            .getOrNull(index - 1)
+                            ?.let { previousMessage ->
+                                formatMessageDateLabel(
+                                    previousMessage.createdAt
+                                )
+                            }
+
+                        if (currentDateLabel != previousDateLabel) {
+                            Text(
+                                text = currentDateLabel,
+                                color = Color(0xFF9CA3AF),
+                                fontSize = 12.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                            )
+                        }
+
                         MessageBubble(
                             body = message.body,
                             isCurrentUser =
-                                message.senderProfileId ==
-                                        uiState.currentUserId
+                                message.senderProfileId == uiState.currentUserId
                         )
                     }
                 }
@@ -191,6 +218,25 @@ fun ChatScreen(
         }
     }
 }
+
+private fun formatMessageDateLabel(
+    timestamp: String
+): String {
+    val messageDate = Instant.parse(timestamp)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
+
+    val today = LocalDate.now()
+
+    return when (messageDate) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> messageDate.format(
+            DateTimeFormatter.ofPattern("d MMM yyyy")
+        )
+    }
+}
+
 @Composable
 private fun MessageBubble(
     body: String,
