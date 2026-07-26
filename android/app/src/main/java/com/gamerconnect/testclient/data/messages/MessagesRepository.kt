@@ -19,6 +19,9 @@ import java.util.UUID
 
 @Serializable
 private data class ConversationParticipantRow(
+
+
+
     @SerialName("conversation_id")
     val conversationId: String,
 
@@ -33,6 +36,8 @@ private data class UnreadMessageRow(
 
     @SerialName("sender_profile_id")
     val senderProfileId: String,
+
+    val body: String,
 
     @SerialName("created_at")
     val createdAt: String
@@ -237,7 +242,7 @@ class MessagesRepository {
             .select {
                 filter {
                     isIn("conversation_id", conversationIds)
-                    neq("sender_profile_id", userId)
+
                 }
             }
             .decodeList<UnreadMessageRow>()
@@ -255,20 +260,32 @@ class MessagesRepository {
             }
 
             val unreadCount = messages.count { message ->
-                if (message.conversationId != conversation.id) {
-                    false
-                } else if (lastReadAt == null) {
-                    true
-                } else {
-                    runCatching {
+                when {
+                    message.conversationId != conversation.id -> false
+
+                    message.senderProfileId == userId -> false
+
+                    lastReadAt == null -> true
+
+                    else -> runCatching {
                         Instant.parse(message.createdAt)
                             .isAfter(lastReadAt)
                     }.getOrDefault(false)
                 }
             }
 
+            val latestMessage = messages
+                .filter { message ->
+                    message.conversationId == conversation.id
+                }
+                .maxByOrNull { message ->
+                    Instant.parse(message.createdAt)
+                }
+
             conversation.copy(
-                unreadCount = unreadCount
+                unreadCount = unreadCount,
+                latestMessage = latestMessage?.body,
+                latestMessageAt = latestMessage?.createdAt
             )
         }
     }

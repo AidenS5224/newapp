@@ -22,6 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun MessagesScreen(
@@ -75,12 +78,23 @@ fun MessagesScreen(
                 uiState.conversations.forEach { conversation ->
                     ConversationCard(
                         name = conversation.title,
-                        preview = if (conversation.conversationType == "group") {
-                            "LFG group chat"
-                        } else {
-                            "Direct conversation"
-                        },
-                        time = "",
+                        preview = conversation.latestMessage
+                            ?: if (conversation.conversationType == "group") {
+                                "LFG group chat"
+                            } else {
+                                "Direct conversation"
+                            },
+                        time = conversation.latestMessageAt
+                            ?.let { timestamp ->
+                                runCatching {
+                                    Instant.parse(timestamp)
+                                        .atZone(ZoneId.systemDefault())
+                                        .format(
+                                            DateTimeFormatter.ofPattern("h:mm a")
+                                        )
+                                }.getOrDefault("")
+                            }
+                            ?: "",
                         unreadCount = conversation.unreadCount,
                         onClick = {
                             messagesViewModel.clearUnreadCount(
