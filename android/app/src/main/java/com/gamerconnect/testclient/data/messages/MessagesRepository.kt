@@ -290,7 +290,8 @@ class MessagesRepository {
         val participantByConversation = participantRows
             .associateBy { it.conversationId }
 
-        return conversations.map { conversation ->
+        return conversations
+            .map { conversation ->
             val lastReadAt = participantByConversation[
                 conversation.id
             ]?.lastReadAt?.let { timestamp ->
@@ -328,5 +329,16 @@ class MessagesRepository {
                 latestMessageAt = latestMessage?.createdAt
             )
         }
+            .sortedByDescending { conversation ->
+                conversation.latestMessageAt
+                    ?.let { timestamp ->
+                        runCatching {
+                            Instant.parse(timestamp)
+                        }.getOrNull()
+                    }
+                    ?: runCatching {
+                        Instant.parse(conversation.createdAt)
+                    }.getOrNull()
+            }
     }
 }
