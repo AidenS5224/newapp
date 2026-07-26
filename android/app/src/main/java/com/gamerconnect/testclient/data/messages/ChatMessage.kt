@@ -2,6 +2,7 @@ package com.gamerconnect.testclient.data.messages
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 data class ChatMessage(
@@ -16,5 +17,8 @@ data class ChatMessage(
     val body: String,
 
     @SerialName("created_at")
-    val createdAt: String
+    val createdAt: String,
+
+    @Transient
+    val senderName: String? = null
 )

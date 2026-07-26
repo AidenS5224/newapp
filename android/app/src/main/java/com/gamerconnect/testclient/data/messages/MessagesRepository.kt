@@ -17,6 +17,18 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.util.UUID
 
+
+@Serializable
+private data class MessageSenderProfile(
+    val id: String,
+
+    @SerialName("display_name")
+    val displayName: String,
+
+    @SerialName("avatar_url")
+    val avatarUrl: String? = null
+)
+
 @Serializable
 private data class ConversationParticipantRow(
 
@@ -188,7 +200,7 @@ class MessagesRepository {
             "Conversation ID is required."
         }
 
-        return client
+        val messages = client
             .from("messages")
             .select {
                 filter {
@@ -203,6 +215,34 @@ class MessagesRepository {
                 limit(100)
             }
             .decodeList<ChatMessage>()
+
+        if (messages.isEmpty()) {
+            return emptyList()
+        }
+
+        val senderIds = messages
+            .map { it.senderProfileId }
+            .distinct()
+
+        val senderProfiles = client
+            .from("profiles")
+            .select {
+                filter {
+                    isIn("id", senderIds)
+                }
+            }
+            .decodeList<MessageSenderProfile>()
+
+        val senderNameById = senderProfiles.associate {
+            it.id to it.displayName
+        }
+
+        return messages.map { message ->
+            message.copy(
+                senderName = senderNameById[message.senderProfileId]
+                    ?: "Unknown player"
+            )
+        }
     }
 
     private val client = SupabaseProvider.client
