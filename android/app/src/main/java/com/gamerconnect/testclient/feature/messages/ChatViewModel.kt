@@ -18,6 +18,7 @@ data class ChatUiState(
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val isSending: Boolean = false,
+    val scrollToBottomSignal: Int = 0
 )
 
 class ChatViewModel(
@@ -40,11 +41,11 @@ class ChatViewModel(
                             showLoading = false
                         )
                     }
-            }.onFailure { error ->
-                _uiState.update {
-                    it.copy(
-                        errorMessage = error.message
-                            ?: "Realtime message updates stopped."
+            }.onFailure {
+                _uiState.update { state ->
+                    state.copy(
+                        errorMessage = state.errorMessage
+                            ?: "Live message updates are temporarily unavailable."
                     )
                 }
             }
@@ -53,7 +54,8 @@ class ChatViewModel(
 
     fun sendMessage(
         conversationId: String,
-        body: String
+        body: String,
+        onSuccess: () -> Unit
     ) {
         viewModelScope.launch {
             _uiState.update {
@@ -71,9 +73,12 @@ class ChatViewModel(
             }.onSuccess {
                 _uiState.update {
                     it.copy(
-                        isSending = false
+                        isSending = false,
+                        scrollToBottomSignal = it.scrollToBottomSignal + 1
                     )
                 }
+
+                onSuccess()
 
                 loadMessages(
                     conversationId = conversationId,
@@ -83,8 +88,7 @@ class ChatViewModel(
                 _uiState.update {
                     it.copy(
                         isSending = false,
-                        errorMessage = error.message
-                            ?: "Unable to send message."
+                        errorMessage = "Message failed to send. Check your connection and try again."
                     )
                 }
             }
@@ -126,12 +130,12 @@ class ChatViewModel(
                         errorMessage = null
                     )
                 }
-            }.onFailure { error ->
-                _uiState.update {
-                    it.copy(
+            }.onFailure {
+                _uiState.update { state ->
+                    state.copy(
                         isLoading = false,
-                        errorMessage = error.message
-                            ?: "Unable to load messages."
+                        errorMessage = state.errorMessage
+                            ?: "Unable to refresh messages. Check your connection."
                     )
                 }
             }

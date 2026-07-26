@@ -60,7 +60,10 @@ fun ChatScreen(
         chatViewModel.observeMessages(conversationId)
     }
 
-    LaunchedEffect(uiState.messages.size) {
+    LaunchedEffect(
+        uiState.messages.size,
+        uiState.scrollToBottomSignal
+    ) {
         if (uiState.messages.isNotEmpty()) {
             listState.animateScrollToItem(
                 uiState.messages.lastIndex
@@ -194,10 +197,11 @@ fun ChatScreen(
                 onClick = {
                     chatViewModel.sendMessage(
                         conversationId = conversationId,
-                        body = messageText
+                        body = messageText,
+                        onSuccess = {
+                            messageText = ""
+                        }
                     )
-
-                    messageText = ""
                 },
                 enabled =
                     messageText.isNotBlank() &&
