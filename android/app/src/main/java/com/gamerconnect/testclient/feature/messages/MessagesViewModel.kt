@@ -11,16 +11,32 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.combine
 
+
+enum class MessageFilter {
+    ALL,
+    UNREAD,
+    GROUPS
+}
+
 data class MessagesUiState(
     val conversations: List<Conversation> = emptyList(),
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    val selectedFilter: MessageFilter = MessageFilter.ALL,
 )
 
 class MessagesViewModel(
     private val repository: MessagesRepository = MessagesRepository()
 ) : ViewModel() {
+
+    fun updateFilter(
+        filter: MessageFilter
+    ) {
+        _uiState.update {
+            it.copy(selectedFilter = filter)
+        }
+    }
 
     fun updateSearchQuery(
         query: String
