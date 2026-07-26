@@ -21,20 +21,49 @@ class MessagesViewModel(
     private val repository: MessagesRepository = MessagesRepository()
 ) : ViewModel() {
 
+    fun clearUnreadCount(
+        conversationId: String
+    ) {
+        _uiState.update { state ->
+            state.copy(
+                conversations = state.conversations.map { conversation ->
+                    if (conversation.id == conversationId) {
+                        conversation.copy(unreadCount = 0)
+                    } else {
+                        conversation
+                    }
+                }
+            )
+        }
+    }
+
+    private var realtimeJob: kotlinx.coroutines.Job? = null
+
     private val _uiState = MutableStateFlow(MessagesUiState())
     val uiState: StateFlow<MessagesUiState> = _uiState.asStateFlow()
 
     init {
         loadConversations()
+
+        realtimeJob = viewModelScope.launch {
+            repository.observeConversationMessageChanges()
+                .collect {
+                    loadConversations(showLoading = false)
+                }
+        }
     }
 
-    fun loadConversations() {
+    fun loadConversations(
+        showLoading: Boolean = true
+    ) {
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    errorMessage = null
-                )
+            if (showLoading) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = true,
+                        errorMessage = null
+                    )
+                }
             }
 
             runCatching {
@@ -43,7 +72,8 @@ class MessagesViewModel(
                 _uiState.update {
                     it.copy(
                         conversations = conversations,
-                        isLoading = false
+                        isLoading = false,
+                        errorMessage = null
                     )
                 }
             }.onFailure { error ->
