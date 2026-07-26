@@ -25,6 +25,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 
 @Composable
 fun MessagesScreen(
@@ -36,6 +38,20 @@ fun MessagesScreen(
     messagesViewModel: MessagesViewModel = viewModel()
 ) {
     val uiState = messagesViewModel.uiState.collectAsStateWithLifecycle().value
+
+    val filteredConversations = uiState.conversations.filter { conversation ->
+        uiState.searchQuery.isBlank() ||
+                conversation.title.contains(
+                    uiState.searchQuery,
+                    ignoreCase = true
+                ) ||
+                conversation.latestMessage
+                    ?.contains(
+                        uiState.searchQuery,
+                        ignoreCase = true
+                    ) == true
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -48,6 +64,25 @@ fun MessagesScreen(
             color = Color.White,
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold
+        )
+
+
+        OutlinedTextField(
+            value = uiState.searchQuery,
+            onValueChange = messagesViewModel::updateSearchQuery,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = {
+                Text("Search conversations")
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = Color(0xFF374151),
+                focusedPlaceholderColor = Color(0xFF9CA3AF),
+                unfocusedPlaceholderColor = Color(0xFF9CA3AF)
+            )
         )
 
         MessageFilterRow()
@@ -67,7 +102,7 @@ fun MessagesScreen(
                 )
             }
 
-            uiState.conversations.isEmpty() -> {
+            filteredConversations.isEmpty() -> {
                 Text(
                     text = "No conversations yet.",
                     color = Color(0xFF9CA3AF)
@@ -75,7 +110,7 @@ fun MessagesScreen(
             }
 
             else -> {
-                uiState.conversations.forEach { conversation ->
+                filteredConversations.forEach { conversation ->
                     ConversationCard(
                         name = conversation.title,
                         preview = conversation.latestMessage

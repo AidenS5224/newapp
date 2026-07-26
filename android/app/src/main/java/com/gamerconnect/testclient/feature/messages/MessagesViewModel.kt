@@ -9,17 +9,26 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
+import kotlinx.coroutines.flow.combine
 
 data class MessagesUiState(
     val conversations: List<Conversation> = emptyList(),
     val isLoading: Boolean = true,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val searchQuery: String = ""
 )
 
 class MessagesViewModel(
     private val repository: MessagesRepository = MessagesRepository()
 ) : ViewModel() {
+
+    fun updateSearchQuery(
+        query: String
+    ) {
+        _uiState.update {
+            it.copy(searchQuery = query)
+        }
+    }
 
     fun clearUnreadCount(
         conversationId: String
