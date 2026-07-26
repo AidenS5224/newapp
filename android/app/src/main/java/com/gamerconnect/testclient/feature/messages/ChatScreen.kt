@@ -166,6 +166,7 @@ fun ChatScreen(
 
                         MessageBubble(
                             body = message.body,
+                            senderName = message.senderName,
                             isCurrentUser =
                                 message.senderProfileId == uiState.currentUserId
                         )
@@ -240,6 +241,7 @@ private fun formatMessageDateLabel(
 @Composable
 private fun MessageBubble(
     body: String,
+    senderName: String?,
     isCurrentUser: Boolean
 ) {
     Box(
@@ -266,6 +268,15 @@ private fun MessageBubble(
                     vertical = 10.dp
                 )
         ) {
+            if (!isCurrentUser && !senderName.isNullOrBlank()) {
+                Text(
+                    text = senderName,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
             Text(
                 text = body,
                 color = Color.White,
