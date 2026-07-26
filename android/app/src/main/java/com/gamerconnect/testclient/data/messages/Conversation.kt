@@ -18,5 +18,14 @@ data class Conversation(
     val createdAt: String,
 
     @kotlinx.serialization.Transient
-    val unreadCount: Int = 0
+    val unreadCount: Int = 0,
+
+    @kotlinx.serialization.Transient
+    val latestMessage: String? = null,
+
+    @kotlinx.serialization.Transient
+    val latestMessageAt: String? = null
+
+
+
 )
