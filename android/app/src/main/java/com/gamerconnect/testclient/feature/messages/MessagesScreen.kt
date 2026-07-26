@@ -27,6 +27,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 
 @Composable
 fun MessagesScreen(
@@ -123,38 +125,46 @@ fun MessagesScreen(
             }
 
             else -> {
-                filteredConversations.forEach { conversation ->
-                    ConversationCard(
-                        name = conversation.title,
-                        preview = conversation.latestMessage
-                            ?: if (conversation.conversationType == "group") {
-                                "LFG group chat"
-                            } else {
-                                "Direct conversation"
-                            },
-                        time = conversation.latestMessageAt
-                            ?.let { timestamp ->
-                                runCatching {
-                                    Instant.parse(timestamp)
-                                        .atZone(ZoneId.systemDefault())
-                                        .format(
-                                            DateTimeFormatter.ofPattern("h:mm a")
-                                        )
-                                }.getOrDefault("")
-                            }
-                            ?: "",
-                        unreadCount = conversation.unreadCount,
-                        onClick = {
-                            messagesViewModel.clearUnreadCount(
-                                conversation.id
-                            )
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(
+                        items = filteredConversations,
+                        key = { conversation -> conversation.id }
+                    ) { conversation ->
+                        ConversationCard(
+                            name = conversation.title,
+                            preview = conversation.latestMessage
+                                ?: if (conversation.conversationType == "group") {
+                                    "LFG group chat"
+                                } else {
+                                    "Direct conversation"
+                                },
+                            time = conversation.latestMessageAt
+                                ?.let { timestamp ->
+                                    runCatching {
+                                        Instant.parse(timestamp)
+                                            .atZone(ZoneId.systemDefault())
+                                            .format(
+                                                DateTimeFormatter.ofPattern("h:mm a")
+                                            )
+                                    }.getOrDefault("")
+                                }
+                                ?: "",
+                            unreadCount = conversation.unreadCount,
+                            onClick = {
+                                messagesViewModel.clearUnreadCount(
+                                    conversation.id
+                                )
 
-                            onConversationClick(
-                                conversation.id,
-                                conversation.title
-                            )
-                        }
-                    )
+                                onConversationClick(
+                                    conversation.id,
+                                    conversation.title
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }
