@@ -40,16 +40,26 @@ fun MessagesScreen(
     val uiState = messagesViewModel.uiState.collectAsStateWithLifecycle().value
 
     val filteredConversations = uiState.conversations.filter { conversation ->
-        uiState.searchQuery.isBlank() ||
-                conversation.title.contains(
-                    uiState.searchQuery,
-                    ignoreCase = true
-                ) ||
-                conversation.latestMessage
-                    ?.contains(
+        val matchesSearch =
+            uiState.searchQuery.isBlank() ||
+                    conversation.title.contains(
                         uiState.searchQuery,
                         ignoreCase = true
-                    ) == true
+                    ) ||
+                    conversation.latestMessage
+                        ?.contains(
+                            uiState.searchQuery,
+                            ignoreCase = true
+                        ) == true
+
+        val matchesFilter = when (uiState.selectedFilter) {
+            MessageFilter.ALL -> true
+            MessageFilter.UNREAD -> conversation.unreadCount > 0
+            MessageFilter.GROUPS ->
+                conversation.conversationType == "group"
+        }
+
+        matchesSearch && matchesFilter
     }
 
     Column(
@@ -85,7 +95,10 @@ fun MessagesScreen(
             )
         )
 
-        MessageFilterRow()
+        MessageFilterRow(
+            selectedFilter = uiState.selectedFilter,
+            onFilterSelected = messagesViewModel::updateFilter
+        )
 
         when {
             uiState.isLoading -> {
@@ -149,24 +162,48 @@ fun MessagesScreen(
 }
 
 @Composable
-private fun MessageFilterRow() {
+private fun MessageFilterRow(
+    selectedFilter: MessageFilter,
+    onFilterSelected: (MessageFilter) -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        MessageFilterChip("All", selected = true)
-        MessageFilterChip("Unread", selected = false)
-        MessageFilterChip("Groups", selected = false)
-        MessageFilterChip("Requests", selected = false)
+        MessageFilterChip(
+            title = "All",
+            selected = selectedFilter == MessageFilter.ALL,
+            onClick = {
+                onFilterSelected(MessageFilter.ALL)
+            }
+        )
+
+        MessageFilterChip(
+            title = "Unread",
+            selected = selectedFilter == MessageFilter.UNREAD,
+            onClick = {
+                onFilterSelected(MessageFilter.UNREAD)
+            }
+        )
+
+        MessageFilterChip(
+            title = "Groups",
+            selected = selectedFilter == MessageFilter.GROUPS,
+            onClick = {
+                onFilterSelected(MessageFilter.GROUPS)
+            }
+        )
     }
 }
 
 @Composable
 private fun MessageFilterChip(
     title: String,
-    selected: Boolean
+    selected: Boolean,
+    onClick: () -> Unit
 ) {
     Card(
+        onClick = onClick,
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (selected) {
