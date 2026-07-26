@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import java.time.Instant
 import java.time.LocalDate
@@ -168,7 +167,9 @@ fun ChatScreen(
                             body = message.body,
                             senderName = message.senderName,
                             isCurrentUser =
-                                message.senderProfileId == uiState.currentUserId
+                                message.senderProfileId == uiState.currentUserId,
+                            isSeen = message.isSeen
+
                         )
                     }
                 }
@@ -242,7 +243,8 @@ private fun formatMessageDateLabel(
 private fun MessageBubble(
     body: String,
     senderName: String?,
-    isCurrentUser: Boolean
+    isCurrentUser: Boolean,
+    isSeen: Boolean
 ) {
     Box(
         modifier = Modifier.fillMaxWidth(),
@@ -283,6 +285,14 @@ private fun MessageBubble(
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Normal
             )
+            if (isCurrentUser) {
+                Text(
+                    text = if (isSeen) "Seen" else "Sent",
+                    color = Color(0xFFDDD6FE),
+                    fontSize = 11.sp,
+                    modifier = Modifier.align(Alignment.End)
+                )
+            }
         }
     }
 }

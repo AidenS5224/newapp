@@ -20,5 +20,9 @@ data class ChatMessage(
     val createdAt: String,
 
     @Transient
-    val senderName: String? = null
+    val senderName: String? = null,
+
+    @Transient
+    val isSeen: Boolean = false
+
 )

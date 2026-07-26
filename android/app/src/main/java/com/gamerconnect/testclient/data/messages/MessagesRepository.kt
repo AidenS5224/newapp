@@ -19,6 +19,15 @@ import java.util.UUID
 
 
 @Serializable
+private data class ParticipantReadStateRow(
+    @SerialName("profile_id")
+    val profileId: String,
+
+    @SerialName("last_read_at")
+    val lastReadAt: String? = null
+)
+
+@Serializable
 private data class MessageSenderProfile(
     val id: String,
 
@@ -150,8 +159,21 @@ class MessagesRepository {
             table = "messages"
         }
 
-        val collectionJob = launch {
+        val readReceiptChanges =
+            channel.postgresChangeFlow<PostgresAction.Update>(
+                schema = "public"
+            ) {
+                table = "conversation_participants"
+            }
+
+        val messageJob = launch {
             changes.collect {
+                trySend(Unit)
+            }
+        }
+
+        val readReceiptJob = launch {
+            readReceiptChanges.collect {
                 trySend(Unit)
             }
         }
@@ -159,7 +181,8 @@ class MessagesRepository {
         channel.subscribe(blockUntilSubscribed = true)
 
         awaitClose {
-            collectionJob.cancel()
+            messageJob.cancel()
+            readReceiptJob.cancel()
 
             launch {
                 client.realtime.removeChannel(channel)
@@ -200,6 +223,9 @@ class MessagesRepository {
             "Conversation ID is required."
         }
 
+        val currentUserId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+
         val messages = client
             .from("messages")
             .select {
@@ -237,10 +263,38 @@ class MessagesRepository {
             it.id to it.displayName
         }
 
+        val participantReadStates = client
+            .from("conversation_participants")
+            .select {
+                filter {
+                    eq("conversation_id", conversationId)
+                    neq("profile_id", currentUserId)
+                }
+            }
+            .decodeList<ParticipantReadStateRow>()
+
         return messages.map { message ->
+            val messageCreatedAt = runCatching {
+                Instant.parse(message.createdAt)
+            }.getOrNull()
+
+            val isSeen = message.senderProfileId == currentUserId &&
+                    messageCreatedAt != null &&
+                    participantReadStates.any { participant ->
+                        participant.lastReadAt
+                            ?.let { timestamp ->
+                                runCatching {
+                                    Instant.parse(timestamp)
+                                        .isAfter(messageCreatedAt)
+                                }.getOrDefault(false)
+                            }
+                            ?: false
+                    }
+
             message.copy(
                 senderName = senderNameById[message.senderProfileId]
-                    ?: "Unknown player"
+                    ?: "Unknown player",
+                isSeen = isSeen
             )
         }
     }
