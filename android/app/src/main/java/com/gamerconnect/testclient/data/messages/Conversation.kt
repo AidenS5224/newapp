@@ -15,5 +15,8 @@ data class Conversation(
     val createdByProfileId: String,
 
     @SerialName("created_at")
-    val createdAt: String
+    val createdAt: String,
+
+    @kotlinx.serialization.Transient
+    val unreadCount: Int = 0
 )

@@ -35,7 +35,10 @@ class ChatViewModel(
             runCatching {
                 repository.observeInsertedMessages(conversationId)
                     .collect {
-                        loadMessages(conversationId)
+                        loadMessages(
+                            conversationId = conversationId,
+                            showLoading = false
+                        )
                     }
             }.onFailure { error ->
                 _uiState.update {
@@ -72,7 +75,10 @@ class ChatViewModel(
                     )
                 }
 
-                loadMessages(conversationId)
+                loadMessages(
+                    conversationId = conversationId,
+                    showLoading = false
+                )
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
@@ -95,14 +101,17 @@ class ChatViewModel(
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
     fun loadMessages(
-        conversationId: String
+        conversationId: String,
+        showLoading: Boolean = true
     ) {
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    errorMessage = null
-                )
+            if (showLoading) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = true,
+                        errorMessage = null
+                    )
+                }
             }
 
             runCatching {
@@ -113,7 +122,8 @@ class ChatViewModel(
                 _uiState.update {
                     it.copy(
                         messages = messages,
-                        isLoading = false
+                        isLoading = false,
+                        errorMessage = null
                     )
                 }
             }.onFailure { error ->

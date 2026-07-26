@@ -81,8 +81,12 @@ fun MessagesScreen(
                             "Direct conversation"
                         },
                         time = "",
-                        unreadCount = 0,
+                        unreadCount = conversation.unreadCount,
                         onClick = {
+                            messagesViewModel.clearUnreadCount(
+                                conversation.id
+                            )
+
                             onConversationClick(
                                 conversation.id,
                                 conversation.title

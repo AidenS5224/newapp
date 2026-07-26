@@ -15,11 +15,27 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.util.UUID
 
 @Serializable
 private data class ConversationParticipantRow(
     @SerialName("conversation_id")
-    val conversationId: String
+    val conversationId: String,
+
+    @SerialName("last_read_at")
+    val lastReadAt: String? = null
+)
+
+@Serializable
+private data class UnreadMessageRow(
+    @SerialName("conversation_id")
+    val conversationId: String,
+
+    @SerialName("sender_profile_id")
+    val senderProfileId: String,
+
+    @SerialName("created_at")
+    val createdAt: String
 )
 
 @Serializable
@@ -42,6 +58,37 @@ private data class UpdateReadTimestampRequest(
 
 
 class MessagesRepository {
+
+
+    fun observeConversationMessageChanges(): Flow<Unit> = callbackFlow {
+        client.realtime.connect()
+
+        val channel = client.realtime.channel(
+            channelId = "conversation-list-${UUID.randomUUID()}"
+        )
+
+        val changes = channel.postgresChangeFlow<PostgresAction.Insert>(
+            schema = "public"
+        ) {
+            table = "messages"
+        }
+
+        val collectionJob = launch {
+            changes.collect {
+                trySend(Unit)
+            }
+        }
+
+        channel.subscribe(blockUntilSubscribed = true)
+
+        awaitClose {
+            collectionJob.cancel()
+
+            launch {
+                client.realtime.removeChannel(channel)
+            }
+        }
+    }
 
     suspend fun markConversationAsRead(
         conversationId: String
@@ -77,7 +124,7 @@ class MessagesRepository {
         client.realtime.connect()
 
         val channel = client.realtime.channel(
-            channelId = "messages-$conversationId"
+            channelId = "messages-$conversationId-${UUID.randomUUID()}"
         )
 
         val changes = channel.postgresChangeFlow<PostgresAction.Insert>(
@@ -96,6 +143,10 @@ class MessagesRepository {
 
         awaitClose {
             collectionJob.cancel()
+
+            launch {
+                client.realtime.removeChannel(channel)
+            }
         }
     }
 
@@ -172,7 +223,7 @@ class MessagesRepository {
             .map { it.conversationId }
             .distinct()
 
-        return client
+        val conversations = client
             .from("conversations")
             .select {
                 filter {
@@ -180,5 +231,45 @@ class MessagesRepository {
                 }
             }
             .decodeList<Conversation>()
+
+        val messages = client
+            .from("messages")
+            .select {
+                filter {
+                    isIn("conversation_id", conversationIds)
+                    neq("sender_profile_id", userId)
+                }
+            }
+            .decodeList<UnreadMessageRow>()
+
+        val participantByConversation = participantRows
+            .associateBy { it.conversationId }
+
+        return conversations.map { conversation ->
+            val lastReadAt = participantByConversation[
+                conversation.id
+            ]?.lastReadAt?.let { timestamp ->
+                runCatching {
+                    Instant.parse(timestamp)
+                }.getOrNull()
+            }
+
+            val unreadCount = messages.count { message ->
+                if (message.conversationId != conversation.id) {
+                    false
+                } else if (lastReadAt == null) {
+                    true
+                } else {
+                    runCatching {
+                        Instant.parse(message.createdAt)
+                            .isAfter(lastReadAt)
+                    }.getOrDefault(false)
+                }
+            }
+
+            conversation.copy(
+                unreadCount = unreadCount
+            )
+        }
     }
 }
