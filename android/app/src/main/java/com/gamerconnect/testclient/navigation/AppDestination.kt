@@ -61,6 +61,18 @@ sealed class AppDestination(
         symbol = "♙"
     )
 
+    data object PlayerProfileDetails : AppDestination(
+        route = "player-profile/{profileId}",
+        label = "Player profile",
+        symbol = ""
+    ) {
+        fun createRoute(
+            profileId: String
+        ): String {
+            return "player-profile/$profileId"
+        }
+    }
+
     companion object {
         val bottomNavigationItems = listOf(
             Groups,

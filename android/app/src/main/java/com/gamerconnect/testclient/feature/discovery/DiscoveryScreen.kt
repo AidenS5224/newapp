@@ -1,6 +1,7 @@
 package com.gamerconnect.testclient.feature.discovery
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,7 +42,8 @@ import com.gamerconnect.testclient.data.lfg.LfgJoinRequest
 fun DiscoveryScreen(
     modifier: Modifier = Modifier,
     discoveryViewModel: DiscoveryViewModel = viewModel(),
-    lfgViewModel: LfgViewModel = viewModel()
+    lfgViewModel: LfgViewModel = viewModel(),
+    onPlayerProfileClick: (String) -> Unit = {}
 ) {
     val uiState = discoveryViewModel.uiState.collectAsStateWithLifecycle().value
     val lfgState = lfgViewModel.uiState.collectAsStateWithLifecycle().value
@@ -146,6 +148,9 @@ fun DiscoveryScreen(
                                 },
                                 onClose = {
                                     lfgViewModel.closePost(post.id)
+                                },
+                                onOwnerClick = {
+                                    onPlayerProfileClick(post.profileId)
                                 }
                             )
                         }
@@ -444,7 +449,8 @@ private fun LfgPostCard(
     isClosing: Boolean,
     isRequested: Boolean,
     onRequestToJoin: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onOwnerClick: () -> Unit
 ) {
     val isOpen = post.status == "open"
 
@@ -481,6 +487,15 @@ private fun LfgPostCard(
                 text = post.mode,
                 color = MaterialTheme.colorScheme.primary,
                 fontSize = 14.sp
+            )
+
+            Text(
+                text = "By ${post.ownerDisplayName.ifBlank { "Unknown player" }}",
+                color = Color(0xFFB8BFCC),
+                fontSize = 13.sp,
+                modifier = Modifier.clickable(
+                    onClick = onOwnerClick
+                )
             )
 
             if (post.rankRange.isNotBlank()) {

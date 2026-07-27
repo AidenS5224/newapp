@@ -29,6 +29,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @Composable
 fun ProfileScreen(
     onSignOut: () -> Unit,
+    onPlayerProfileClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     profileViewModel: ProfileViewModel = viewModel()
 ) {
@@ -71,6 +72,21 @@ fun ProfileScreen(
                 ProfileHeader(
                     onSignOut = onSignOut
                 )
+
+                Button(
+                    onClick = {
+                        onPlayerProfileClick(profile.id)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "View public profile",
+                        color = Color.White
+                    )
+                }
 
                 ProfileSection(
                     title = "About",
