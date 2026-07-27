@@ -179,6 +179,15 @@ fun GamerConnectApp(
                     conversationId = conversationId,
                     onBack = {
                         navController.popBackStack()
+                    },
+                    onLeaveSuccess = {
+                        navController.navigate(AppDestination.Messages.route) {
+                            popUpTo(AppDestination.Messages.route) {
+                                inclusive = true
+                            }
+
+                            launchSingleTop = true
+                        }
                     }
                 )
             }

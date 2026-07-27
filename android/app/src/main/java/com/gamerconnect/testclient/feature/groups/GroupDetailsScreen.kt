@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -21,11 +22,13 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +42,7 @@ import coil3.compose.AsyncImage
 import com.gamerconnect.testclient.data.messages.Conversation
 import com.gamerconnect.testclient.data.messages.GroupMember
 import com.gamerconnect.testclient.data.messages.MessagesRepository
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -47,14 +51,24 @@ import java.time.format.DateTimeFormatter
 fun GroupDetailsScreen(
     conversationId: String,
     onBack: () -> Unit,
+    onLeaveSuccess: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val repository = remember {
         MessagesRepository()
     }
+    val coroutineScope = rememberCoroutineScope()
 
     var isLoading by remember(conversationId) {
         mutableStateOf(true)
+    }
+
+    var isLeaving by remember(conversationId) {
+        mutableStateOf(false)
+    }
+
+    var showLeaveConfirmation by remember(conversationId) {
+        mutableStateOf(false)
     }
 
     var groupConversation by remember(conversationId) {
@@ -69,9 +83,14 @@ fun GroupDetailsScreen(
         mutableStateOf<String?>(null)
     }
 
+    var leaveErrorMessage by remember(conversationId) {
+        mutableStateOf<String?>(null)
+    }
+
     LaunchedEffect(conversationId) {
         isLoading = true
         errorMessage = null
+        leaveErrorMessage = null
 
         runCatching {
             val conversation = repository
@@ -229,7 +248,149 @@ fun GroupDetailsScreen(
                     GroupMembersCard(
                         members = groupMembers
                     )
+
+                    LeaveGroupCard(
+                        isLeaving = isLeaving,
+                        errorMessage = leaveErrorMessage,
+                        onLeaveClick = {
+                            showLeaveConfirmation = true
+                        }
+                    )
                 }
+            }
+        }
+    }
+
+    if (showLeaveConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isLeaving) {
+                    showLeaveConfirmation = false
+                }
+            },
+            title = {
+                Text(
+                    text = "Leave group?",
+                    color = Color.White
+                )
+            },
+            text = {
+                Text(
+                    text = "You will be removed from this group chat. Other members and the conversation will stay in place.",
+                    color = Color(0xFFB8BFCC)
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isLeaving,
+                    onClick = {
+                        if (isLeaving) {
+                            return@TextButton
+                        }
+
+                        isLeaving = true
+                        leaveErrorMessage = null
+
+                        coroutineScope.launch {
+                            runCatching {
+                                repository.leaveGroupConversation(
+                                    conversationId = conversationId
+                                )
+                            }.onSuccess {
+                                isLeaving = false
+                                showLeaveConfirmation = false
+                                onLeaveSuccess()
+                            }.onFailure { error ->
+                                isLeaving = false
+                                showLeaveConfirmation = false
+                                leaveErrorMessage = error.message
+                                    ?: "Unable to leave this group right now."
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        text = if (isLeaving) {
+                            "Leaving..."
+                        } else {
+                            "Leave group"
+                        },
+                        color = Color(0xFFFCA5A5)
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isLeaving,
+                    onClick = {
+                        showLeaveConfirmation = false
+                    }
+                ) {
+                    Text(
+                        text = "Cancel",
+                        color = Color(0xFFB8BFCC)
+                    )
+                }
+            },
+            containerColor = Color(0xFF0B1220)
+        )
+    }
+}
+
+@Composable
+private fun LeaveGroupCard(
+    isLeaving: Boolean,
+    errorMessage: String?,
+    onLeaveClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF0B1220)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Group actions",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = "Leaving removes you from this group chat only. It will not delete the group for other members.",
+                color = Color(0xFFB8BFCC),
+                fontSize = 14.sp
+            )
+
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 14.sp
+                )
+            }
+
+            Button(
+                onClick = onLeaveClick,
+                enabled = !isLeaving,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF7F1D1D),
+                    disabledContainerColor = Color(0xFF3F1D1D)
+                )
+            ) {
+                Text(
+                    text = if (isLeaving) {
+                        "Leaving..."
+                    } else {
+                        "Leave group"
+                    },
+                    color = Color.White
+                )
             }
         }
     }
