@@ -13,6 +13,10 @@ data class LfgPost(
     @SerialName("game_id")
     val gameId: String? = null,
 
+    val gameTitle: String = "",
+
+    val ownerDisplayName: String = "",
+
     val title: String,
     val mode: String,
 

@@ -12,10 +12,21 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import com.gamerconnect.testclient.data.lfg.LfgJoinRequest
 
+enum class LfgStatusFilter(
+    val label: String
+) {
+    All("All"),
+    Open("Open"),
+    Filled("Filled"),
+    Closed("Closed")
+}
+
 data class LfgUiState(
     val posts: List<LfgPost> = emptyList(),
     val pendingOwnerRequests: List<LfgJoinRequest> = emptyList(),
     val currentUserId: String? = null,
+    val searchQuery: String = "",
+    val statusFilter: LfgStatusFilter = LfgStatusFilter.All,
     val isLoading: Boolean = true,
     val isCreating: Boolean = false,
     val requestingPostId: String? = null,
@@ -25,7 +36,27 @@ data class LfgUiState(
     val creationMessage: String? = null,
     val joinRequestMessage: String? = null,
     val lifecycleMessage: String? = null
-)
+) {
+    val filteredPosts: List<LfgPost>
+        get() {
+            val trimmedQuery = searchQuery.trim()
+            val statusFiltered = posts.filter { post ->
+                statusFilter == LfgStatusFilter.All ||
+                        post.status.equals(
+                            statusFilter.label,
+                            ignoreCase = true
+                        )
+            }
+
+            if (trimmedQuery.isEmpty()) {
+                return statusFiltered
+            }
+
+            return statusFiltered.filter { post ->
+                post.matchesQuery(trimmedQuery)
+            }
+        }
+}
 
 class LfgViewModel(
     private val repository: LfgRepository = LfgRepository()
@@ -109,6 +140,34 @@ class LfgViewModel(
                     )
                 }
             }
+        }
+    }
+
+    fun updateSearchQuery(
+        query: String
+    ) {
+        _uiState.update {
+            it.copy(
+                searchQuery = query
+            )
+        }
+    }
+
+    fun clearSearch() {
+        _uiState.update {
+            it.copy(
+                searchQuery = ""
+            )
+        }
+    }
+
+    fun updateStatusFilter(
+        filter: LfgStatusFilter
+    ) {
+        _uiState.update {
+            it.copy(
+                statusFilter = filter
+            )
         }
     }
 
@@ -298,5 +357,23 @@ class LfgViewModel(
                 }
             }
         }
+    }
+}
+
+private fun LfgPost.matchesQuery(
+    query: String
+): Boolean {
+    return listOf(
+        title,
+        gameTitle,
+        gameId.orEmpty(),
+        mode,
+        rankRange,
+        partySize,
+        startsAt,
+        status,
+        ownerDisplayName
+    ).any { value ->
+        value.contains(query, ignoreCase = true)
     }
 }

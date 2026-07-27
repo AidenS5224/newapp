@@ -58,6 +58,20 @@ private data class AcceptLfgJoinRequestParams(
     val requestId: String
 )
 
+@Serializable
+private data class LfgOwnerProfileRow(
+    val id: String,
+
+    @SerialName("display_name")
+    val displayName: String
+)
+
+@Serializable
+private data class LfgGameRow(
+    val id: String,
+    val name: String
+)
+
 class LfgRepository {
 
     fun observeLfgLifecycleChanges(): Flow<Unit> = callbackFlow {
@@ -302,7 +316,7 @@ class LfgRepository {
     private val client = SupabaseProvider.client
 
     suspend fun getOpenLfgPosts(): List<LfgPost> {
-        return client
+        val posts = client
             .from("lfg_posts")
             .select {
                 order(
@@ -313,5 +327,57 @@ class LfgRepository {
                 limit(50)
             }
             .decodeList<LfgPost>()
+
+        if (posts.isEmpty()) {
+            return emptyList()
+        }
+
+        val ownerIds = posts
+            .map { post -> post.profileId }
+            .distinct()
+
+        val ownerProfiles = client
+            .from("profiles")
+            .select {
+                filter {
+                    isIn("id", ownerIds)
+                }
+            }
+            .decodeList<LfgOwnerProfileRow>()
+
+        val ownerNameById = ownerProfiles.associate {
+            it.id to it.displayName
+        }
+
+        val gameIds = posts
+            .mapNotNull { post -> post.gameId }
+            .filter { gameId -> gameId.isNotBlank() }
+            .distinct()
+
+        val games = if (gameIds.isEmpty()) {
+            emptyList()
+        } else {
+            client
+                .from("games")
+                .select {
+                    filter {
+                        isIn("id", gameIds)
+                    }
+                }
+                .decodeList<LfgGameRow>()
+        }
+
+        val gameNameById = games.associate {
+            it.id to it.name
+        }
+
+        return posts.map { post ->
+            post.copy(
+                ownerDisplayName = ownerNameById[post.profileId].orEmpty(),
+                gameTitle = post.gameId
+                    ?.let { gameId -> gameNameById[gameId] }
+                    .orEmpty()
+            )
+        }
     }
 }
