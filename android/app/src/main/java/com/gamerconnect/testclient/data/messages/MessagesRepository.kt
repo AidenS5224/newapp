@@ -226,7 +226,9 @@ class MessagesRepository {
     }
 
     suspend fun getMessages(
-        conversationId: String
+        conversationId: String,
+        page: Int = 0,
+        pageSize: Int = 50
     ): List<ChatMessage> {
         require(conversationId.isNotBlank()) {
             "Conversation ID is required."
@@ -244,10 +246,13 @@ class MessagesRepository {
 
                 order(
                     column = "created_at",
-                    order = Order.ASCENDING
+                    order = Order.DESCENDING
                 )
 
-                limit(100)
+                val from = page.toLong() * pageSize
+                val to = from + pageSize - 1
+
+                range(from..to)
             }
             .decodeList<ChatMessage>()
 
@@ -282,7 +287,7 @@ class MessagesRepository {
             }
             .decodeList<ParticipantReadStateRow>()
 
-        return messages.map { message ->
+        return messages.asReversed().map { message ->
             val messageCreatedAt = runCatching {
                 Instant.parse(message.createdAt)
             }.getOrNull()

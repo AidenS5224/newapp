@@ -68,10 +68,13 @@ fun ChatScreen(
     }
 
     LaunchedEffect(
-        uiState.messages.size,
-        uiState.scrollToBottomSignal
+        uiState.scrollToBottomSignal,
+        uiState.isLoading
     ) {
-        if (uiState.messages.isNotEmpty()) {
+        if (
+            !uiState.isLoading &&
+            uiState.messages.isNotEmpty()
+        ) {
             listState.animateScrollToItem(
                 uiState.messages.lastIndex
             )
@@ -145,6 +148,35 @@ fun ChatScreen(
                 }
 
                 else -> {
+                    item {
+                        when {
+                            uiState.isLoadingOlder -> {
+                                Text(
+                                    text = "Loading older messages...",
+                                    color = Color(0xFFB8BFCC),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
+                            uiState.hasMoreMessages -> {
+                                Button(
+                                    onClick = {
+                                        chatViewModel.loadOlderMessages(conversationId)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF111827)
+                                    )
+                                ) {
+                                    Text(
+                                        text = "Load older messages",
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     itemsIndexed(
                         items = uiState.messages,
                         key = { _, message -> message.id }
