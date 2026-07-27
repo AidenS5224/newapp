@@ -36,6 +36,13 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import coil3.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+
+
 
 @Composable
 fun ChatScreen(
@@ -169,10 +176,10 @@ fun ChatScreen(
                         MessageBubble(
                             body = message.body,
                             senderName = message.senderName,
+                            senderAvatarUrl = message.senderAvatarUrl,
                             isCurrentUser =
                                 message.senderProfileId == uiState.currentUserId,
                             isSeen = message.isSeen
-
                         )
                     }
                 }
@@ -247,6 +254,7 @@ private fun formatMessageDateLabel(
 private fun MessageBubble(
     body: String,
     senderName: String?,
+    senderAvatarUrl: String?,
     isCurrentUser: Boolean,
     isSeen: Boolean
 ) {
@@ -258,44 +266,78 @@ private fun MessageBubble(
             Alignment.CenterStart
         }
     ) {
-        Column(
-            modifier = Modifier
-                .widthIn(max = 280.dp)
-                .background(
-                    color = if (isCurrentUser) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        Color(0xFF111827)
-                    },
-                    shape = RoundedCornerShape(18.dp)
-                )
-                .padding(
-                    horizontal = 14.dp,
-                    vertical = 10.dp
-                )
+        Row(
+            verticalAlignment = Alignment.Bottom
         ) {
-            if (!isCurrentUser && !senderName.isNullOrBlank()) {
-                Text(
-                    text = senderName,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            if (!isCurrentUser) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!senderAvatarUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = senderAvatarUrl,
+                            contentDescription = "$senderName avatar",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Text(
+                            text = senderName
+                                ?.trim()
+                                ?.firstOrNull()
+                                ?.uppercase()
+                                ?: "?",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
 
-            Text(
-                text = body,
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Normal
-            )
-            if (isCurrentUser) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .background(
+                        color = if (isCurrentUser) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            Color(0xFF111827)
+                        },
+                        shape = RoundedCornerShape(18.dp)
+                    )
+                    .padding(
+                        horizontal = 14.dp,
+                        vertical = 10.dp
+                    )
+            ) {
+                if (!isCurrentUser && !senderName.isNullOrBlank()) {
+                    Text(
+                        text = senderName,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
                 Text(
-                    text = if (isSeen) "Seen" else "Sent",
-                    color = Color(0xFFDDD6FE),
-                    fontSize = 11.sp,
-                    modifier = Modifier.align(Alignment.End)
+                    text = body,
+                    color = Color.White,
+                    fontSize = 15.sp
                 )
+
+                if (isCurrentUser) {
+                    Text(
+                        text = if (isSeen) "Seen" else "Sent",
+                        color = Color(0xFFDDD6FE),
+                        fontSize = 11.sp,
+                        modifier = Modifier.align(Alignment.End)
+                    )
+                }
             }
         }
     }

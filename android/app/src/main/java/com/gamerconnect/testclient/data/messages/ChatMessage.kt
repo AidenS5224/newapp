@@ -23,6 +23,9 @@ data class ChatMessage(
     val senderName: String? = null,
 
     @Transient
+    val senderAvatarUrl: String? = null,
+
+    @Transient
     val isSeen: Boolean = false
 
 )

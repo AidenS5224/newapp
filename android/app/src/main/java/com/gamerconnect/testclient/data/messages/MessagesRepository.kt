@@ -268,8 +268,8 @@ class MessagesRepository {
             }
             .decodeList<MessageSenderProfile>()
 
-        val senderNameById = senderProfiles.associate {
-            it.id to it.displayName
+        val senderProfileById = senderProfiles.associateBy {
+            it.id
         }
 
         val participantReadStates = client
@@ -300,9 +300,12 @@ class MessagesRepository {
                             ?: false
                     }
 
+            val senderProfile = senderProfileById[message.senderProfileId]
+
             message.copy(
-                senderName = senderNameById[message.senderProfileId]
+                senderName = senderProfile?.displayName
                     ?: "Unknown player",
+                senderAvatarUrl = senderProfile?.avatarUrl,
                 isSeen = isSeen
             )
         }
