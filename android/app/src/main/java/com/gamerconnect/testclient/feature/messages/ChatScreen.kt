@@ -48,7 +48,9 @@ import androidx.compose.ui.layout.ContentScale
 fun ChatScreen(
     conversationId: String,
     conversationTitle: String,
+    conversationType: String,
     onBack: () -> Unit,
+    onGroupDetailsClick: () -> Unit,
     modifier: Modifier = Modifier,
     chatViewModel: ChatViewModel = viewModel()
 ) {
@@ -88,16 +90,36 @@ fun ChatScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Button(
-            onClick = onBack,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF111827)
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Back",
-                color = Color.White
-            )
+            Button(
+                onClick = onBack,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF111827)
+                )
+            ) {
+                Text(
+                    text = "Back",
+                    color = Color.White
+                )
+            }
+
+            if (conversationType == "group") {
+                Button(
+                    onClick = onGroupDetailsClick,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF25104B)
+                    )
+                ) {
+                    Text(
+                        text = "Group details",
+                        color = Color.White
+                    )
+                }
+            }
         }
 
         Text(

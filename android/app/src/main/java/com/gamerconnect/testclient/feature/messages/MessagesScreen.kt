@@ -34,7 +34,8 @@ import androidx.compose.foundation.lazy.items
 fun MessagesScreen(
     onConversationClick: (
         conversationId: String,
-        conversationTitle: String
+        conversationTitle: String,
+        conversationType: String
     ) -> Unit,
     modifier: Modifier = Modifier,
     messagesViewModel: MessagesViewModel = viewModel()
@@ -160,7 +161,8 @@ fun MessagesScreen(
 
                                 onConversationClick(
                                     conversation.id,
-                                    conversation.title
+                                    conversation.title,
+                                    conversation.conversationType
                                 )
                             }
                         )
