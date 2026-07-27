@@ -21,5 +21,7 @@ data class UserProfile(
     val bio: String = "",
     @SerialName("avatar_url")
     val avatarUrl: String? = null,
-    val online: Boolean = false
+    val online: Boolean = false,
+    @SerialName("created_at")
+    val createdAt: String = ""
 )

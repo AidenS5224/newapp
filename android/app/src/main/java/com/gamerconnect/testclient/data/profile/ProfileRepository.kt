@@ -12,11 +12,21 @@ class ProfileRepository {
         val userId = client.auth.currentUserOrNull()?.id
             ?: error("No signed-in user.")
 
+        return getProfile(userId)
+    }
+
+    suspend fun getProfile(
+        profileId: String
+    ): UserProfile {
+        require(profileId.isNotBlank()) {
+            "Profile ID is required."
+        }
+
         return client
             .from("profiles")
             .select {
                 filter {
-                    eq("id", userId)
+                    eq("id", profileId)
                 }
             }
             .decodeSingle<UserProfile>()

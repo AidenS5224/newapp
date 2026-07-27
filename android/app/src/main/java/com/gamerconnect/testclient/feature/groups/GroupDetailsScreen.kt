@@ -1,6 +1,7 @@
 package com.gamerconnect.testclient.feature.groups
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +53,7 @@ fun GroupDetailsScreen(
     conversationId: String,
     onBack: () -> Unit,
     onLeaveSuccess: () -> Unit,
+    onPlayerProfileClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val repository = remember {
@@ -280,7 +282,10 @@ fun GroupDetailsScreen(
                     }
 
                     GroupMembersCard(
-                        members = groupMembers
+                        members = groupMembers,
+                        onMemberClick = { member ->
+                            onPlayerProfileClick(member.profileId)
+                        }
                     )
 
                     if (transferSuccessMessage != null) {
@@ -699,7 +704,8 @@ private fun LeaveGroupCard(
 
 @Composable
 private fun GroupMembersCard(
-    members: List<GroupMember>
+    members: List<GroupMember>,
+    onMemberClick: (GroupMember) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -739,7 +745,10 @@ private fun GroupMembersCard(
             } else {
                 members.forEach { member ->
                     GroupMemberRow(
-                        member = member
+                        member = member,
+                        onClick = {
+                            onMemberClick(member)
+                        }
                     )
                 }
             }
@@ -749,10 +758,15 @@ private fun GroupMembersCard(
 
 @Composable
 private fun GroupMemberRow(
-    member: GroupMember
+    member: GroupMember,
+    onClick: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                onClick = onClick
+            ),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

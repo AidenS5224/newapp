@@ -21,6 +21,7 @@ import com.gamerconnect.testclient.feature.feed.FeedScreen
 import com.gamerconnect.testclient.feature.groups.GroupsScreen
 import com.gamerconnect.testclient.feature.groups.GroupDetailsScreen
 import com.gamerconnect.testclient.feature.messages.MessagesScreen
+import com.gamerconnect.testclient.feature.profile.PlayerProfileDetailsScreen
 import com.gamerconnect.testclient.feature.profile.ProfileScreen
 import com.gamerconnect.testclient.navigation.AppDestination
 import android.net.Uri
@@ -92,7 +93,15 @@ fun GamerConnectApp(
             }
 
             composable(AppDestination.Discovery.route) {
-                DiscoveryScreen()
+                DiscoveryScreen(
+                    onPlayerProfileClick = { profileId ->
+                        navController.navigate(
+                            AppDestination.PlayerProfileDetails.createRoute(
+                                Uri.encode(profileId)
+                            )
+                        )
+                    }
+                )
             }
 
             composable(AppDestination.Feed.route) {
@@ -180,6 +189,13 @@ fun GamerConnectApp(
                     onBack = {
                         navController.popBackStack()
                     },
+                    onPlayerProfileClick = { profileId ->
+                        navController.navigate(
+                            AppDestination.PlayerProfileDetails.createRoute(
+                                Uri.encode(profileId)
+                            )
+                        )
+                    },
                     onLeaveSuccess = {
                         navController.navigate(AppDestination.Messages.route) {
                             popUpTo(AppDestination.Messages.route) {
@@ -194,7 +210,35 @@ fun GamerConnectApp(
 
             composable(AppDestination.Profile.route) {
                 ProfileScreen(
-                    onSignOut = onSignOut
+                    onSignOut = onSignOut,
+                    onPlayerProfileClick = { profileId ->
+                        navController.navigate(
+                            AppDestination.PlayerProfileDetails.createRoute(
+                                Uri.encode(profileId)
+                            )
+                        )
+                    }
+                )
+            }
+
+            composable(
+                route = AppDestination.PlayerProfileDetails.route,
+                arguments = listOf(
+                    navArgument("profileId") {
+                        type = NavType.StringType
+                    }
+                )
+            ) { backStackEntry ->
+                val profileId = Uri.decode(
+                    backStackEntry.arguments?.getString("profileId")
+                        ?: return@composable
+                )
+
+                PlayerProfileDetailsScreen(
+                    profileId = profileId,
+                    onBack = {
+                        navController.popBackStack()
+                    }
                 )
             }
         }
