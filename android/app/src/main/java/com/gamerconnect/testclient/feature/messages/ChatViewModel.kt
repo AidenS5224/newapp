@@ -16,6 +16,8 @@ data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val currentUserId: String? = null,
     val isLoading: Boolean = true,
+    val isLoadingOlder: Boolean = false,
+    val hasMoreMessages: Boolean = true,
     val errorMessage: String? = null,
     val isSending: Boolean = false,
     val scrollToBottomSignal: Int = 0
@@ -26,6 +28,9 @@ class ChatViewModel(
 ) : ViewModel() {
 
     private var realtimeJob: kotlinx.coroutines.Job? = null
+    private val messagePageSize = 50
+    private var oldestLoadedPage = 0
+    private var activeConversationId: String? = null
 
     fun observeMessages(
         conversationId: String
@@ -104,10 +109,71 @@ class ChatViewModel(
     )
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
+    fun loadOlderMessages(
+        conversationId: String
+    ) {
+        val state = _uiState.value
+
+        if (
+            state.isLoading ||
+            state.isLoadingOlder ||
+            !state.hasMoreMessages
+        ) {
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoadingOlder = true,
+                    errorMessage = null
+                )
+            }
+
+            val nextPage = oldestLoadedPage + 1
+
+            runCatching {
+                repository.getMessages(
+                    conversationId = conversationId,
+                    page = nextPage,
+                    pageSize = messagePageSize
+                )
+            }.onSuccess { olderMessages ->
+                oldestLoadedPage = nextPage
+
+                _uiState.update { currentState ->
+                    currentState.copy(
+                        messages = (
+                                olderMessages + currentState.messages
+                                ).distinctBy { message -> message.id },
+                        isLoadingOlder = false,
+                        hasMoreMessages =
+                            olderMessages.size == messagePageSize,
+                        errorMessage = null
+                    )
+                }
+            }.onFailure {
+                _uiState.update { currentState ->
+                    currentState.copy(
+                        isLoadingOlder = false,
+                        errorMessage =
+                            "Unable to load older messages."
+                    )
+                }
+            }
+        }
+    }
+
     fun loadMessages(
         conversationId: String,
         showLoading: Boolean = true
     ) {
+
+        if (activeConversationId != conversationId) {
+            activeConversationId = conversationId
+            oldestLoadedPage = 0
+        }
+
         viewModelScope.launch {
             if (showLoading) {
                 _uiState.update {
@@ -119,7 +185,11 @@ class ChatViewModel(
             }
 
             runCatching {
-                repository.getMessages(conversationId)
+                repository.getMessages(
+                    conversationId = conversationId,
+                    page = 0,
+                    pageSize = (oldestLoadedPage + 1) * messagePageSize
+                )
             }.onSuccess { messages ->
                 repository.markConversationAsRead(conversationId)
 
@@ -127,6 +197,7 @@ class ChatViewModel(
                     it.copy(
                         messages = messages,
                         isLoading = false,
+                        hasMoreMessages = messages.size == messagePageSize,
                         errorMessage = null
                     )
                 }
