@@ -11,9 +11,12 @@ import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.realtime
 import kotlinx.coroutines.flow.Flow
 import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.time.Instant
 import java.util.UUID
 
@@ -347,6 +350,44 @@ class MessagesRepository {
     }
 
     private val client = SupabaseProvider.client
+
+    suspend fun leaveGroupConversation(
+        conversationId: String
+    ) {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+
+        require(conversationId.isNotBlank()) {
+            "Conversation ID is required."
+        }
+
+        val conversation = getMyConversations()
+            .firstOrNull { conversation ->
+                conversation.id == conversationId &&
+                        conversation.conversationType == "group"
+            }
+            ?: error("This group is no longer available.")
+
+        val members = getGroupMembers(conversation.id)
+        val currentMember = members.firstOrNull { member ->
+            member.profileId == userId
+        } ?: error("You are no longer a member of this group.")
+
+        if (currentMember.role.equals("owner", ignoreCase = true)) {
+            error("Ownership controls are required before the owner can leave this group.")
+        }
+
+        if (members.size <= 1) {
+            error("This group needs another member before you can leave.")
+        }
+
+        client.postgrest.rpc(
+            function = "delete_conversation",
+            parameters = buildJsonObject {
+                put("target_conversation_id", conversation.id)
+            }
+        )
+    }
 
     suspend fun getGroupMembers(
         conversationId: String
