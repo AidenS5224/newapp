@@ -19,6 +19,15 @@ import java.util.UUID
 
 
 @Serializable
+private data class DirectConversationParticipantRow(
+    @SerialName("conversation_id")
+    val conversationId: String,
+
+    @SerialName("profile_id")
+    val profileId: String
+)
+
+@Serializable
 private data class ParticipantReadStateRow(
     @SerialName("profile_id")
     val profileId: String,
@@ -40,11 +49,11 @@ private data class MessageSenderProfile(
 
 @Serializable
 private data class ConversationParticipantRow(
-
-
-
     @SerialName("conversation_id")
     val conversationId: String,
+
+    @SerialName("profile_id")
+    val profileId: String,
 
     @SerialName("last_read_at")
     val lastReadAt: String? = null
@@ -331,6 +340,49 @@ class MessagesRepository {
             }
             .decodeList<Conversation>()
 
+        val allParticipantRows = client
+            .from("conversation_participants")
+            .select {
+                filter {
+                    isIn("conversation_id", conversationIds)
+                }
+            }
+            .decodeList<DirectConversationParticipantRow>()
+
+        val otherProfileIds = allParticipantRows
+            .filter { participant ->
+                participant.profileId != userId
+            }
+            .map { participant ->
+                participant.profileId
+            }
+            .distinct()
+
+        val otherProfiles = if (otherProfileIds.isEmpty()) {
+            emptyList()
+        } else {
+            client
+                .from("profiles")
+                .select {
+                    filter {
+                        isIn("id", otherProfileIds)
+                    }
+                }
+                .decodeList<MessageSenderProfile>()
+        }
+
+        val profileNameById = otherProfiles.associate {
+            it.id to it.displayName
+        }
+
+        val otherParticipantByConversation = allParticipantRows
+            .filter { participant ->
+                participant.profileId != userId
+            }
+            .associateBy { participant ->
+                participant.conversationId
+            }
+
         val messages = client
             .from("messages")
             .select {
@@ -377,11 +429,26 @@ class MessagesRepository {
                     Instant.parse(message.createdAt)
                 }
 
-            conversation.copy(
-                unreadCount = unreadCount,
-                latestMessage = latestMessage?.body,
-                latestMessageAt = latestMessage?.createdAt
-            )
+                val displayTitle =
+                    if (conversation.conversationType == "direct") {
+                        val otherParticipant =
+                            otherParticipantByConversation[conversation.id]
+
+                        otherParticipant
+                            ?.let { participant ->
+                                profileNameById[participant.profileId]
+                            }
+                            ?: conversation.title
+                    } else {
+                        conversation.title
+                    }
+
+                conversation.copy(
+                    title = displayTitle,
+                    unreadCount = unreadCount,
+                    latestMessage = latestMessage?.body,
+                    latestMessageAt = latestMessage?.createdAt
+                )
         }
             .sortedByDescending { conversation ->
                 conversation.latestMessageAt
