@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,12 +25,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil3.compose.AsyncImage
 import com.gamerconnect.testclient.data.profile.UserProfile
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -80,7 +84,7 @@ fun DiscoveryScreen(
             )
 
             DiscoveryTab(
-                title = "Matches",
+                title = "Players",
                 selected = selectedTab == 1,
                 onClick = {
                     selectedTab = 1
@@ -88,10 +92,18 @@ fun DiscoveryScreen(
             )
 
             DiscoveryTab(
-                title = "My Posts",
+                title = "Matches",
                 selected = selectedTab == 2,
                 onClick = {
                     selectedTab = 2
+                }
+            )
+
+            DiscoveryTab(
+                title = "My Posts",
+                selected = selectedTab == 3,
+                onClick = {
+                    selectedTab = 3
                 }
             )
         }
@@ -159,6 +171,19 @@ fun DiscoveryScreen(
             }
 
             1 -> {
+                PlayerSearchPanel(
+                    query = uiState.playerSearchQuery,
+                    results = uiState.playerSearchResults,
+                    isSearching = uiState.isSearchingPlayers,
+                    message = uiState.playerSearchMessage,
+                    onQueryChange = discoveryViewModel::updatePlayerSearchQuery,
+                    onSearch = discoveryViewModel::searchPlayers,
+                    onClear = discoveryViewModel::clearPlayerSearch,
+                    onPlayerClick = onPlayerProfileClick
+                )
+            }
+
+            2 -> {
                 when {
                     uiState.isLoading -> {
                         Text(
@@ -193,7 +218,7 @@ fun DiscoveryScreen(
                 }
             }
 
-            2 -> {
+            3 -> {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
@@ -239,6 +264,208 @@ fun DiscoveryScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PlayerSearchPanel(
+    query: String,
+    results: List<UserProfile>,
+    isSearching: Boolean,
+    message: String?,
+    onQueryChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    onClear: () -> Unit,
+    onPlayerClick: (String) -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF0B1220)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Find Players",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "Search by display name, open a profile, then send a friend request.",
+                    color = Color(0xFFB8BFCC),
+                    fontSize = 13.sp
+                )
+
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    label = {
+                        Text("Display name")
+                    },
+                    placeholder = {
+                        Text("Search players")
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = onSearch,
+                        enabled = !isSearching,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = if (isSearching) {
+                                "Searching..."
+                            } else {
+                                "Search"
+                            },
+                            color = Color.White
+                        )
+                    }
+
+                    Button(
+                        onClick = onClear,
+                        enabled = !isSearching && (query.isNotBlank() || results.isNotEmpty()),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF111827)
+                        )
+                    ) {
+                        Text(
+                            text = "Clear",
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+        }
+
+        if (!message.isNullOrBlank()) {
+            Text(
+                text = message,
+                color = Color(0xFFB8BFCC),
+                fontSize = 13.sp
+            )
+        }
+
+        results.forEach { profile ->
+            PlayerSearchResultCard(
+                profile = profile,
+                onClick = {
+                    onPlayerClick(profile.id)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerSearchResultCard(
+    profile: UserProfile,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                onClick = onClick
+            ),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF0B1220)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PlayerSearchAvatar(
+                displayName = profile.displayName,
+                avatarUrl = profile.avatarUrl
+            )
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = profile.displayName.ifBlank {
+                        "Unknown player"
+                    },
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = profile.platforms
+                        .firstOrNull()
+                        ?: profile.region.ifBlank {
+                            "Region not set"
+                        },
+                    color = Color(0xFFB8BFCC),
+                    fontSize = 13.sp
+                )
+            }
+
+            Text(
+                text = "View",
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerSearchAvatar(
+    displayName: String,
+    avatarUrl: String?
+) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(Color(0xFF25104B)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (!avatarUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = avatarUrl,
+                contentDescription = "$displayName avatar",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Text(
+                text = displayName
+                    .trim()
+                    .firstOrNull()
+                    ?.uppercase()
+                    ?: "?",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

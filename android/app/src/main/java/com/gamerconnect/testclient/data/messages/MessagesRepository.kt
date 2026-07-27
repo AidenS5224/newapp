@@ -355,6 +355,36 @@ class MessagesRepository {
         return client.auth.currentUserOrNull()?.id
     }
 
+    suspend fun canStartDirectMessage(
+        targetProfileId: String
+    ): Boolean {
+        require(targetProfileId.isNotBlank()) {
+            "Player profile ID is required."
+        }
+
+        return client.postgrest.rpc(
+            function = "can_start_direct_message",
+            parameters = buildJsonObject {
+                put("target_profile_id", targetProfileId)
+            }
+        ).decodeAs()
+    }
+
+    suspend fun startDirectMessage(
+        targetProfileId: String
+    ): String {
+        require(targetProfileId.isNotBlank()) {
+            "Player profile ID is required."
+        }
+
+        return client.postgrest.rpc(
+            function = "start_direct_message",
+            parameters = buildJsonObject {
+                put("target_profile_id", targetProfileId)
+            }
+        ).decodeAs()
+    }
+
     suspend fun transferGroupOwnership(
         conversationId: String,
         newOwnerProfileId: String

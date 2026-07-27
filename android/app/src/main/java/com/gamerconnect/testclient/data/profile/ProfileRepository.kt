@@ -3,6 +3,37 @@ package com.gamerconnect.testclient.data.profile
 import com.gamerconnect.testclient.data.supabase.SupabaseProvider
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+enum class FriendshipStatus {
+    NONE,
+    OUTGOING_PENDING,
+    INCOMING_PENDING,
+    ACCEPTED,
+    REJECTED
+}
+
+data class FriendshipState(
+    val connectionId: String? = null,
+    val status: FriendshipStatus = FriendshipStatus.NONE
+)
+
+@Serializable
+private data class ConnectionRow(
+    val id: String,
+
+    @SerialName("from_profile_id")
+    val fromProfileId: String,
+
+    @SerialName("to_profile_id")
+    val toProfileId: String,
+
+    val status: String
+)
 
 class ProfileRepository {
 
@@ -45,6 +76,124 @@ class ProfileRepository {
                 limit(50)
             }
             .decodeList<UserProfile>()
+    }
+
+    suspend fun searchProfilesByDisplayName(
+        query: String
+    ): List<UserProfile> {
+        val cleanQuery = query.trim()
+        if (cleanQuery.isBlank()) {
+            return emptyList()
+        }
+
+        return client.postgrest.rpc(
+            function = "search_player_profiles",
+            parameters = buildJsonObject {
+                put("search_text", cleanQuery)
+            }
+        ).decodeList()
+    }
+
+    suspend fun getFriendshipWith(
+        profileId: String
+    ): FriendshipState {
+        val currentUserId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+
+        if (profileId.isBlank() || profileId == currentUserId) {
+            return FriendshipState()
+        }
+
+        val connections = client
+            .from("connections")
+            .select()
+            .decodeList<ConnectionRow>()
+
+        val connection = connections.firstOrNull { row ->
+            (row.fromProfileId == currentUserId && row.toProfileId == profileId) ||
+                (row.fromProfileId == profileId && row.toProfileId == currentUserId)
+        } ?: return FriendshipState()
+
+        val status = when (connection.status) {
+            "accepted" -> FriendshipStatus.ACCEPTED
+            "pending" -> if (connection.fromProfileId == currentUserId) {
+                FriendshipStatus.OUTGOING_PENDING
+            } else {
+                FriendshipStatus.INCOMING_PENDING
+            }
+            "rejected" -> FriendshipStatus.REJECTED
+            else -> FriendshipStatus.NONE
+        }
+
+        return FriendshipState(
+            connectionId = connection.id,
+            status = status
+        )
+    }
+
+    suspend fun sendFriendRequest(
+        profileId: String
+    ) {
+        require(profileId.isNotBlank()) {
+            "Player profile ID is required."
+        }
+
+        client.postgrest.rpc(
+            function = "send_friend_request",
+            parameters = buildJsonObject {
+                put("target_profile_id", profileId)
+            }
+        )
+    }
+
+    suspend fun acceptFriendRequest(
+        connectionId: String
+    ) {
+        respondFriendRequest(
+            connectionId = connectionId,
+            responseStatus = "accepted"
+        )
+    }
+
+    suspend fun declineFriendRequest(
+        connectionId: String
+    ) {
+        respondFriendRequest(
+            connectionId = connectionId,
+            responseStatus = "rejected"
+        )
+    }
+
+    suspend fun removeFriend(
+        profileId: String
+    ) {
+        require(profileId.isNotBlank()) {
+            "Player profile ID is required."
+        }
+
+        client.postgrest.rpc(
+            function = "remove_friendship",
+            parameters = buildJsonObject {
+                put("target_profile_id", profileId)
+            }
+        )
+    }
+
+    private suspend fun respondFriendRequest(
+        connectionId: String,
+        responseStatus: String
+    ) {
+        require(connectionId.isNotBlank()) {
+            "Friend request ID is required."
+        }
+
+        client.postgrest.rpc(
+            function = "respond_friend_request",
+            parameters = buildJsonObject {
+                put("request_id", connectionId)
+                put("response_status", responseStatus)
+            }
+        )
     }
 }
 

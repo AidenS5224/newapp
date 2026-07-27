@@ -96,6 +96,8 @@ const state = {
   discoveryIndex: 0,
   discoveryPassed: [],
   discoveryFilters: { search: "", game: "", platform: "", style: "" },
+  lfgFilters: { search: "", status: "all" },
+  lfgBusy: "",
   ready: false,
   config: null,
   supabase: null,
@@ -105,6 +107,8 @@ const state = {
   profiles: [],
   games: [],
   lfg: [],
+  lfgJoinRequests: [],
+  lfgMembers: [],
   squads: [],
   feedReactions: [],
   feedComments: [],
@@ -184,11 +188,13 @@ async function loadData() {
   state.loadingData = true;
   try {
     await ensureProfile();
-    const [profiles, games, feed, lfg, squads, feedReactions, feedComments] = await Promise.all([
+    const [profiles, games, feed, lfg, lfgJoinRequests, lfgMembers, squads, feedReactions, feedComments] = await Promise.all([
       read("profiles", "id, handle, display_name, age, region, timezone, platforms, top_games, rank, play_style, availability, bio, avatar_url, online, stats, created_at"),
       read("games", "*"),
       read("feed_posts", "*", { order: "created_at" }),
       read("lfg_posts", "*", { order: "created_at" }),
+      read("lfg_join_requests", "*", { order: "created_at", ascending: true }),
+      read("lfg_members", "*"),
       read("squads", "*", { order: "created_at" }),
       read("feed_reactions", "*"),
       read("feed_comments", "*", { order: "created_at", ascending: true })
@@ -197,6 +203,8 @@ async function loadData() {
     state.games = games || [];
     state.feed = feed || [];
     state.lfg = lfg || [];
+    state.lfgJoinRequests = lfgJoinRequests || [];
+    state.lfgMembers = lfgMembers || [];
     state.squads = squads || [];
     state.feedReactions = feedReactions || [];
     state.feedComments = feedComments || [];
@@ -332,6 +340,9 @@ function setupRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "feed_posts" }, handleRealtimeChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "feed_reactions" }, handleRealtimeChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "feed_comments" }, handleRealtimeChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "lfg_posts" }, handleRealtimeChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "lfg_join_requests" }, handleRealtimeChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "lfg_members" }, handleRealtimeChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "connections" }, handleRealtimeChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "blocked_profiles" }, handleRealtimeChange)
     .subscribe(status => {
@@ -655,10 +666,8 @@ function renderDiscovery() {
               ${incoming.length ? incoming.map(renderIncomingConnection).join("") : `<p>No incoming requests.</p>`}
               ${outgoing.length ? `<p class="muted">${outgoing.length} sent request(s) waiting for approval.</p>` : ""}
             </div>
-            <div class="card discovery-side-card">
-              <h3>Live LFG Posts</h3>
-              ${state.lfg.length ? state.lfg.slice(0, 4).map(renderDiscoveryLfgPost).join("") : `<p>No LFG posts yet.</p>`}
-            </div>
+            ${renderLfgCreateCard()}
+            ${renderLfgBrowseCard()}
           </aside>
         </div>
       ` : ""}
@@ -745,11 +754,124 @@ function renderDeckActions(profile, connection) {
   return `${pass}<button class="deck-action play" type="button" data-connect="${profile.id}">Try Again</button>`;
 }
 
-function renderDiscoveryLfgPost(post) {
+function renderLfgCreateCard() {
+  const games = lfgGameOptions();
+  if (!state.profile) {
+    return `
+      <div class="card discovery-side-card">
+        <h3>Create LFG</h3>
+        <p>Sign in to post a party and review join requests.</p>
+        <button class="button purple" type="button" data-profile-tab>Sign In</button>
+      </div>
+    `;
+  }
   return `
-    <div class="discovery-post-row">
-      <strong>${escapeHtml(post.title || "Untitled LFG")}</strong>
-      <p>${escapeHtml(post.game || post.mode || "Any game")} ${post.starts_at ? `- ${escapeHtml(post.starts_at)}` : ""}</p>
+    <form class="card lfg-create-card" data-create-lfg>
+      <div>
+        <h3>Create LFG</h3>
+        <p>Post an open squad slot for players to request.</p>
+      </div>
+      <input class="field" name="title" maxlength="80" placeholder="Title, e.g. Ranked grind tonight" required>
+      <select class="field" name="game_id">
+        <option value="">Any game</option>
+        ${games.map(game => `<option value="${escapeAttribute(game.id)}">${escapeHtml(game.name)}</option>`).join("")}
+      </select>
+      <div class="filter-row">
+        <input class="field" name="mode" maxlength="40" placeholder="Mode" value="Ranked">
+        <input class="field" name="party_size" maxlength="20" placeholder="Party size, e.g. 2 / 4">
+      </div>
+      <div class="filter-row">
+        <input class="field" name="rank_range" maxlength="40" placeholder="Rank range">
+        <input class="field" name="starts_at" maxlength="60" placeholder="When">
+      </div>
+      <button class="button green wide" type="submit" ${state.lfgBusy === "create" ? "disabled" : ""}>${state.lfgBusy === "create" ? "Posting..." : "Post LFG"}</button>
+    </form>
+  `;
+}
+
+function renderLfgBrowseCard() {
+  const posts = filteredLfgPosts().filter(post => post.profile_id !== state.profile?.id).slice(0, 8);
+  return `
+    <div class="card lfg-browse-card">
+      <div>
+        <h3>Live LFG Posts</h3>
+        <p>Request to join open parties. Owners approve requests from My Posts.</p>
+      </div>
+      <form class="lfg-filter-row" data-lfg-filters>
+        <input class="field" name="search" placeholder="Search LFG posts" value="${escapeAttribute(state.lfgFilters.search)}">
+        <select class="field" name="status">
+          ${["all", "open", "filled", "closed"].map(status => `<option value="${status}" ${state.lfgFilters.status === status ? "selected" : ""}>${escapeHtml(status === "all" ? "All" : status)}</option>`).join("")}
+        </select>
+      </form>
+      <div class="lfg-list">
+        ${posts.length ? posts.map(renderDiscoveryLfgPost).join("") : `<div class="empty">No LFG posts match those filters.</div>`}
+      </div>
+    </div>
+  `;
+}
+
+function renderDiscoveryLfgPost(post) {
+  const owner = profileFor(post.profile_id);
+  const request = myLfgRequest(post.id);
+  const ownerView = post.profile_id === state.profile?.id;
+  const status = lfgStatus(post);
+  const disabled = !state.profile || ownerView || status !== "open" || Boolean(request) || state.lfgBusy === post.id;
+  const actionLabel = !state.profile
+    ? "Sign In"
+    : ownerView
+      ? "Your Post"
+      : request
+        ? request.status
+        : status === "open"
+          ? "Request To Join"
+          : status;
+  const joinAction = !state.profile
+    ? `<button class="button green" type="button" data-profile-tab>Sign In</button>`
+    : `<button class="button green" type="button" data-join-lfg="${post.id}" ${disabled ? "disabled" : ""}>${escapeHtml(actionLabel)}</button>`;
+  return `
+    <article class="lfg-card">
+      <div class="lfg-card-head">
+        <div>
+          <span class="pill ${status === "open" ? "hot" : ""}">${escapeHtml(status)}</span>
+          <h3>${escapeHtml(post.title || "Untitled LFG")}</h3>
+          <p>${escapeHtml(owner?.handle || "Unknown player")} - ${escapeHtml(lfgGameLabel(post))}</p>
+        </div>
+        <span class="chat-avatar">${renderAvatar(owner, owner?.handle || "GC")}</span>
+      </div>
+      <div class="lfg-meta-grid">
+        <span><strong>Mode</strong>${escapeHtml(post.mode || "Any mode")}</span>
+        <span><strong>Rank</strong>${escapeHtml(post.rank_range || "Any rank")}</span>
+        <span><strong>Party</strong>${escapeHtml(post.party_size || "Any size")}</span>
+        <span><strong>When</strong>${escapeHtml(post.starts_at || "Flexible")}</span>
+      </div>
+      <div class="lfg-actions">
+        ${ownerView && status !== "closed" ? `<button class="button red" type="button" data-close-lfg="${post.id}" ${state.lfgBusy === post.id ? "disabled" : ""}>${state.lfgBusy === post.id ? "Closing..." : "Close"}</button>` : ""}
+        ${ownerView ? `<span class="muted">${lfgPendingRequests(post.id).length} pending request(s)</span>` : joinAction}
+      </div>
+    </article>
+  `;
+}
+
+function renderLfgOwnerRequests(post) {
+  const requests = lfgPendingRequests(post.id);
+  if (!requests.length) return "";
+  return `
+    <div class="lfg-request-list">
+      <h4>Pending Requests</h4>
+      ${requests.map(request => {
+        const profile = profileFor(request.requester_profile_id);
+        return `
+          <div class="lfg-request-row">
+            <span class="chat-avatar">${renderAvatar(profile, profile?.handle || "GC")}</span>
+            <div>
+              <strong>${escapeHtml(profile?.handle || "Unknown player")}</strong>
+              <p>${escapeHtml(profile?.region || "Unknown region")} - ${escapeHtml(profile?.rank || "Unranked")}</p>
+            </div>
+            <button class="button green" type="button" data-accept-lfg="${request.id}" ${state.lfgBusy === request.id ? "disabled" : ""}>Accept</button>
+            <button class="button dark" type="button" data-reject-lfg="${request.id}" ${state.lfgBusy === request.id ? "disabled" : ""}>Reject</button>
+          </div>
+        `;
+      }).join("")}
     </div>
   `;
 }
@@ -777,8 +899,12 @@ function renderDiscoveryMatches() {
 function renderDiscoveryPosts() {
   const mine = state.profile ? state.lfg.filter(post => post.profile_id === state.profile.id || post.created_by_profile_id === state.profile.id) : [];
   return `
-    <section class="discovery-panel-grid">
-      ${mine.length ? mine.map(renderDiscoveryLfgPost).join("") : `<div class="empty">Your LFG posts will show here once posting is added to this section.</div>`}
+    <section class="lfg-manage-layout">
+      ${renderLfgCreateCard()}
+      <div class="lfg-manage-list">
+        <h3>My LFG Posts</h3>
+        ${mine.length ? mine.map(post => `${renderDiscoveryLfgPost(post)}${renderLfgOwnerRequests(post)}`).join("") : `<div class="empty">Your LFG posts will show here after you create one.</div>`}
+      </div>
     </section>
   `;
 }
@@ -1426,9 +1552,15 @@ function bindPageEvents() {
   document.querySelectorAll("[data-remove-game]").forEach(button => button.addEventListener("click", () => removeGame(button.dataset.removeGame)));
   document.querySelectorAll("[data-sync-game]").forEach(button => button.addEventListener("click", () => syncGameStats(button.dataset.syncGame)));
   document.querySelector("[data-discovery-filters]")?.addEventListener("input", updateDiscoveryFilters);
+  document.querySelector("[data-lfg-filters]")?.addEventListener("input", updateLfgFilters);
   document.querySelectorAll("[data-discovery-tab]").forEach(button => button.addEventListener("click", () => switchDiscoveryTab(button.dataset.discoveryTab)));
   document.querySelector("[data-start-discovery]")?.addEventListener("click", startDiscovery);
   document.querySelector("[data-discovery-pass]")?.addEventListener("click", passDiscoveryProfile);
+  document.querySelector("[data-create-lfg]")?.addEventListener("submit", createLfgPost);
+  document.querySelectorAll("[data-join-lfg]").forEach(button => button.addEventListener("click", () => requestLfgJoin(button.dataset.joinLfg)));
+  document.querySelectorAll("[data-accept-lfg]").forEach(button => button.addEventListener("click", () => acceptLfgRequest(button.dataset.acceptLfg)));
+  document.querySelectorAll("[data-reject-lfg]").forEach(button => button.addEventListener("click", () => rejectLfgRequest(button.dataset.rejectLfg)));
+  document.querySelectorAll("[data-close-lfg]").forEach(button => button.addEventListener("click", () => closeLfgPost(button.dataset.closeLfg)));
   document.querySelector("[data-create-post]")?.addEventListener("submit", createPost);
   document.querySelectorAll("[data-like]").forEach(button => button.addEventListener("click", () => likePost(button.dataset.like)));
   document.querySelectorAll("[data-delete-post]").forEach(button => button.addEventListener("click", () => deletePost(button.dataset.deletePost)));
@@ -2303,6 +2435,19 @@ function updateDiscoveryFilters(event) {
   }
 }
 
+function updateLfgFilters(event) {
+  const activeField = event.target?.name;
+  const form = new FormData(event.currentTarget);
+  state.lfgFilters = {
+    search: String(form.get("search") || ""),
+    status: String(form.get("status") || "all")
+  };
+  renderShell();
+  if (activeField === "search") {
+    window.setTimeout(() => document.querySelector("[data-lfg-filters] [name='search']")?.focus(), 0);
+  }
+}
+
 function switchDiscoveryTab(tab) {
   state.discoveryTab = tab || "lfg";
   renderShell();
@@ -2322,6 +2467,107 @@ function passDiscoveryProfile() {
   }
   state.discoveryIndex = Math.min(state.discoveryIndex || 0, Math.max(players.length - 2, 0));
   renderShell();
+}
+
+async function createLfgPost(event) {
+  event.preventDefault();
+  if (!state.profile) return alert("Sign in first.");
+  if (state.lfgBusy) return;
+  const form = new FormData(event.currentTarget);
+  state.lfgBusy = "create";
+  renderShell();
+  const payload = {
+    profile_id: state.profile.id,
+    game_id: form.get("game_id") || null,
+    title: String(form.get("title") || "").trim(),
+    mode: String(form.get("mode") || "Any mode").trim() || "Any mode",
+    rank_range: String(form.get("rank_range") || "").trim(),
+    party_size: String(form.get("party_size") || "").trim(),
+    starts_at: String(form.get("starts_at") || "").trim(),
+    status: "open"
+  };
+  const { error } = await state.supabase.from("lfg_posts").insert(payload);
+  state.lfgBusy = "";
+  if (error) {
+    renderShell();
+    return alert(`${error.message}\n\nIf this mentions lfg_posts, make sure the Supabase LFG migrations through 0018 have been run.`);
+  }
+  state.discoveryTab = "posts";
+  await loadData();
+}
+
+async function requestLfgJoin(postId) {
+  if (!state.profile) return alert("Sign in first.");
+  const post = state.lfg.find(item => item.id === postId);
+  if (!post) return alert("That LFG post could not be found.");
+  if (post.profile_id === state.profile.id) return alert("This is your LFG post.");
+  if (lfgStatus(post) !== "open") return alert("This LFG post is not accepting requests.");
+  if (myLfgRequest(postId)) return alert("You already requested to join this LFG.");
+  if (state.lfgBusy) return;
+  state.lfgBusy = postId;
+  renderShell();
+  const { error } = await state.supabase.from("lfg_join_requests").insert({
+    lfg_post_id: postId,
+    requester_profile_id: state.profile.id,
+    status: "pending"
+  });
+  state.lfgBusy = "";
+  if (error) {
+    renderShell();
+    return alert(error.message);
+  }
+  await loadData();
+}
+
+async function acceptLfgRequest(requestId) {
+  if (!state.profile || state.lfgBusy) return;
+  state.lfgBusy = requestId;
+  renderShell();
+  const { data, error } = await state.supabase.rpc("accept_lfg_join_request", { request_id: requestId });
+  state.lfgBusy = "";
+  if (error) {
+    renderShell();
+    return alert(`${error.message}\n\nIf this mentions accept_lfg_join_request, run the LFG migrations in Supabase.`);
+  }
+  if (data) {
+    state.selectedConversationId = data;
+    state.tab = "messages";
+    state.messagesMobileView = "chat";
+  }
+  await loadData();
+}
+
+async function rejectLfgRequest(requestId) {
+  if (!state.profile || state.lfgBusy) return;
+  state.lfgBusy = requestId;
+  renderShell();
+  const { error } = await state.supabase
+    .from("lfg_join_requests")
+    .update({ status: "rejected" })
+    .eq("id", requestId);
+  state.lfgBusy = "";
+  if (error) {
+    renderShell();
+    return alert(error.message);
+  }
+  await loadData();
+}
+
+async function closeLfgPost(postId) {
+  if (!state.profile) return alert("Sign in first.");
+  const post = state.lfg.find(item => item.id === postId);
+  if (!post || post.profile_id !== state.profile.id) return alert("Only the LFG owner can close this post.");
+  if (state.lfgBusy) return;
+  if (!confirm("Close this LFG post? Players will not be able to send new join requests.")) return;
+  state.lfgBusy = postId;
+  renderShell();
+  const { error } = await state.supabase.rpc("close_lfg_post", { post_id: postId });
+  state.lfgBusy = "";
+  if (error) {
+    renderShell();
+    return alert(`${error.message}\n\nIf this mentions close_lfg_post, run supabase/migrations/0017_lfg_lifecycle.sql in Supabase.`);
+  }
+  await loadData();
 }
 
 function discoveryPlayers() {
@@ -2398,6 +2644,60 @@ function discoveryGameOptions() {
     seen.add(key);
     return true;
   }).sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function lfgGameOptions() {
+  const fromGames = state.games.map(game => ({ id: game.id, name: game.name }));
+  const fromProfile = list(state.profile?.top_games).map(value => gameForProfileValue(value)).filter(Boolean);
+  const fromPopular = popularGames.map(value => gameForProfileValue(value)).filter(Boolean);
+  const seen = new Set();
+  return [...fromProfile, ...fromGames, ...fromPopular].filter(game => {
+    if (!game?.id || seen.has(game.id)) return false;
+    seen.add(game.id);
+    return true;
+  }).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function filteredLfgPosts() {
+  const query = state.lfgFilters.search.trim().toLowerCase();
+  const status = state.lfgFilters.status || "all";
+  return state.lfg.filter(post => {
+    if (status !== "all" && lfgStatus(post) !== status) return false;
+    if (!query) return true;
+    const owner = profileFor(post.profile_id);
+    const haystack = [
+      post.title,
+      post.mode,
+      post.rank_range,
+      post.party_size,
+      post.starts_at,
+      post.status,
+      lfgGameLabel(post),
+      owner?.handle,
+      owner?.display_name
+    ].join(" ").toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
+function lfgStatus(post) {
+  return ["open", "filled", "closed"].includes(post?.status) ? post.status : "open";
+}
+
+function lfgGameLabel(post) {
+  return post?.game_id ? gameLabel(post.game_id) : "Any game";
+}
+
+function myLfgRequest(postId) {
+  if (!state.profile) return null;
+  return state.lfgJoinRequests.find(request =>
+    request.lfg_post_id === postId &&
+    request.requester_profile_id === state.profile.id
+  ) || null;
+}
+
+function lfgPendingRequests(postId) {
+  return state.lfgJoinRequests.filter(request => request.lfg_post_id === postId && request.status === "pending");
 }
 
 function profileFeedGameOptions() {
