@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -51,6 +53,7 @@ fun DiscoveryScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -118,10 +121,15 @@ fun DiscoveryScreen(
                         lfgState.posts.forEach { post ->
                             LfgPostCard(
                                 post = post,
+                                isOwner = post.profileId == lfgState.currentUserId,
                                 isRequesting = lfgState.requestingPostId == post.id,
+                                isClosing = lfgState.closingPostId == post.id,
                                 isRequested = post.id in lfgState.requestedPostIds,
                                 onRequestToJoin = {
                                     lfgViewModel.requestToJoin(post.id)
+                                },
+                                onClose = {
+                                    lfgViewModel.closePost(post.id)
                                 }
                             )
                         }
@@ -174,6 +182,14 @@ fun DiscoveryScreen(
                         creationMessage = lfgState.creationMessage,
                         onCreate = lfgViewModel::createPost
                     )
+
+                    lfgState.lifecycleMessage?.let { message ->
+                        Text(
+                            text = message,
+                            color = Color(0xFF86EFAC),
+                            fontSize = 13.sp
+                        )
+                    }
 
                     Text(
                         text = "Pending Join Requests",
@@ -309,12 +325,14 @@ private fun OwnerJoinRequestCard(
 @Composable
 private fun LfgPostCard(
     post: LfgPost,
+    isOwner: Boolean,
     isRequesting: Boolean,
+    isClosing: Boolean,
     isRequested: Boolean,
-    onRequestToJoin: () -> Unit
+    onRequestToJoin: () -> Unit,
+    onClose: () -> Unit
 ) {
-
-
+    val isOpen = post.status == "open"
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -327,12 +345,23 @@ private fun LfgPostCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = post.title,
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = post.title,
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+
+                LfgStatusBadge(
+                    status = post.status
+                )
+            }
 
             Text(
                 text = post.mode,
@@ -364,27 +393,84 @@ private fun LfgPostCard(
                 )
             }
 
-            Button(
-                onClick = onRequestToJoin,
-                enabled = !isRequesting && !isRequested,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isRequested) {
-                        Color(0xFF1F2937)
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    }
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = when {
-                        isRequesting -> "Sending..."
-                        isRequested -> "Requested"
-                        else -> "Request to Join"
-                    },
-                    color = Color.White
-                )
+                Button(
+                    onClick = onRequestToJoin,
+                    enabled = isOpen && !isOwner && !isRequesting && !isRequested,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = when {
+                            !isOpen || isOwner || isRequested -> Color(0xFF1F2937)
+                            else -> MaterialTheme.colorScheme.primary
+                        }
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = when {
+                            isRequesting -> "Sending..."
+                            isRequested -> "Requested"
+                            isOwner -> "Your post"
+                            post.status == "filled" -> "Filled"
+                            post.status == "closed" -> "Closed"
+                            else -> "Request to Join"
+                        },
+                        color = Color.White
+                    )
+                }
+
+                if (isOwner && post.status != "closed") {
+                    Button(
+                        onClick = onClose,
+                        enabled = !isClosing,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF7F1D1D)
+                        )
+                    ) {
+                        Text(
+                            text = if (isClosing) "Closing..." else "Close",
+                            color = Color.White
+                        )
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun LfgStatusBadge(
+    status: String
+) {
+    val normalizedStatus = status.lowercase()
+    val badgeColor = when (normalizedStatus) {
+        "filled" -> Color(0xFF854D0E)
+        "closed" -> Color(0xFF7F1D1D)
+        else -> Color(0xFF14532D)
+    }
+    val label = when (normalizedStatus) {
+        "filled" -> "Filled"
+        "closed" -> "Closed"
+        else -> "Open"
+    }
+
+    Box(
+        modifier = Modifier
+            .background(
+                color = badgeColor,
+                shape = RoundedCornerShape(999.dp)
+            )
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gamerconnect.testclient.data.lfg.LfgPost
 import com.gamerconnect.testclient.data.lfg.LfgRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,18 +15,23 @@ import com.gamerconnect.testclient.data.lfg.LfgJoinRequest
 data class LfgUiState(
     val posts: List<LfgPost> = emptyList(),
     val pendingOwnerRequests: List<LfgJoinRequest> = emptyList(),
+    val currentUserId: String? = null,
     val isLoading: Boolean = true,
     val isCreating: Boolean = false,
     val requestingPostId: String? = null,
+    val closingPostId: String? = null,
     val requestedPostIds: Set<String> = emptySet(),
     val errorMessage: String? = null,
     val creationMessage: String? = null,
-    val joinRequestMessage: String? = null
+    val joinRequestMessage: String? = null,
+    val lifecycleMessage: String? = null
 )
 
 class LfgViewModel(
     private val repository: LfgRepository = LfgRepository()
 ) : ViewModel() {
+
+    private var realtimeJob: Job? = null
 
     fun acceptJoinRequest(
         requestId: String
@@ -34,12 +40,53 @@ class LfgViewModel(
             runCatching {
                 repository.acceptJoinRequest(requestId)
             }.onSuccess {
+                loadPosts()
                 loadPendingOwnerRequests()
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
                         errorMessage = error.message
                             ?: "Unable to accept join request."
+                    )
+                }
+            }
+        }
+    }
+
+    fun closePost(
+        lfgPostId: String
+    ) {
+        if (_uiState.value.closingPostId != null) {
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    closingPostId = lfgPostId,
+                    errorMessage = null,
+                    lifecycleMessage = null
+                )
+            }
+
+            runCatching {
+                repository.closeLfgPost(lfgPostId)
+            }.onSuccess {
+                _uiState.update {
+                    it.copy(
+                        closingPostId = null,
+                        lifecycleMessage = "LFG post closed."
+                    )
+                }
+
+                loadPosts()
+                loadPendingOwnerRequests()
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        closingPostId = null,
+                        errorMessage = error.message
+                            ?: "Unable to close LFG post."
                     )
                 }
             }
@@ -94,7 +141,8 @@ class LfgViewModel(
                 it.copy(
                     requestingPostId = lfgPostId,
                     errorMessage = null,
-                    joinRequestMessage = null
+                    joinRequestMessage = null,
+                    lifecycleMessage = null
                 )
             }
 
@@ -132,7 +180,8 @@ class LfgViewModel(
                 it.copy(
                     isCreating = true,
                     errorMessage = null,
-                    creationMessage = null
+                    creationMessage = null,
+                    lifecycleMessage = null
                 )
             }
 
@@ -169,8 +218,55 @@ class LfgViewModel(
     val uiState: StateFlow<LfgUiState> = _uiState.asStateFlow()
 
     init {
+        _uiState.update {
+            it.copy(
+                currentUserId = repository.currentUserId()
+            )
+        }
         loadPosts()
         loadPendingOwnerRequests()
+        observeLfgChanges()
+    }
+
+    override fun onCleared() {
+        realtimeJob?.cancel()
+        super.onCleared()
+    }
+
+    private fun observeLfgChanges() {
+        realtimeJob?.cancel()
+        realtimeJob = viewModelScope.launch {
+            repository.observeLfgLifecycleChanges().collect {
+                refreshLfgState()
+            }
+        }
+    }
+
+    private fun refreshLfgState() {
+        viewModelScope.launch {
+            runCatching {
+                val posts = repository.getOpenLfgPosts()
+                val requests = repository.getPendingRequestsForOwnedPosts()
+
+                posts to requests
+            }.onSuccess { (posts, requests) ->
+                _uiState.update {
+                    it.copy(
+                        posts = posts,
+                        pendingOwnerRequests = requests,
+                        currentUserId = repository.currentUserId(),
+                        errorMessage = null
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        errorMessage = error.message
+                            ?: "Unable to refresh LFG updates."
+                    )
+                }
+            }
+        }
     }
 
     fun loadPosts() {
@@ -178,7 +274,8 @@ class LfgViewModel(
             _uiState.update {
                 it.copy(
                     isLoading = true,
-                    errorMessage = null
+                    errorMessage = null,
+                    currentUserId = repository.currentUserId()
                 )
             }
 
