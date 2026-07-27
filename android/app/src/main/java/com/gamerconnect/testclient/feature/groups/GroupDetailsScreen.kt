@@ -2,13 +2,18 @@ package com.gamerconnect.testclient.feature.groups
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -24,11 +29,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
 import com.gamerconnect.testclient.data.messages.Conversation
+import com.gamerconnect.testclient.data.messages.GroupMember
 import com.gamerconnect.testclient.data.messages.MessagesRepository
 import java.time.Instant
 import java.time.ZoneId
@@ -52,6 +61,10 @@ fun GroupDetailsScreen(
         mutableStateOf<Conversation?>(null)
     }
 
+    var groupMembers by remember(conversationId) {
+        mutableStateOf<List<GroupMember>>(emptyList())
+    }
+
     var errorMessage by remember(conversationId) {
         mutableStateOf<String?>(null)
     }
@@ -61,14 +74,23 @@ fun GroupDetailsScreen(
         errorMessage = null
 
         runCatching {
-            repository
+            val conversation = repository
                 .getMyConversations()
                 .firstOrNull { conversation ->
                     conversation.id == conversationId &&
                             conversation.conversationType == "group"
                 }
+
+            val members = if (conversation == null) {
+                emptyList()
+            } else {
+                repository.getGroupMembers(conversationId)
+            }
+
+            conversation to members
         }.onSuccess { conversation ->
-            groupConversation = conversation
+            groupConversation = conversation.first
+            groupMembers = conversation.second
             isLoading = false
         }.onFailure { error ->
             errorMessage = error.message
@@ -81,6 +103,7 @@ fun GroupDetailsScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -166,41 +189,168 @@ fun GroupDetailsScreen(
             }
 
             else -> {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF0B1220)
-                    )
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFF0B1220)
+                        )
                     ) {
-                        Text(
-                            text = loadedConversation.title.ifBlank {
-                                "Untitled Group"
-                            },
-                            color = Color.White,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        GroupMetadataRow(
-                            label = "Conversation ID",
-                            value = loadedConversation.id
-                        )
-
-                        GroupMetadataRow(
-                            label = "Created",
-                            value = formatGroupCreatedDate(
-                                loadedConversation.createdAt
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            Text(
+                                text = loadedConversation.title.ifBlank {
+                                    "Untitled Group"
+                                },
+                                color = Color.White,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold
                             )
-                        )
+
+                            GroupMetadataRow(
+                                label = "Conversation ID",
+                                value = loadedConversation.id
+                            )
+
+                            GroupMetadataRow(
+                                label = "Created",
+                                value = formatGroupCreatedDate(
+                                    loadedConversation.createdAt
+                                )
+                            )
+                        }
                     }
+
+                    GroupMembersCard(
+                        members = groupMembers
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun GroupMembersCard(
+    members: List<GroupMember>
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF0B1220)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Members",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "${members.size}",
+                    color = Color(0xFFB8BFCC),
+                    fontSize = 13.sp
+                )
+            }
+
+            if (members.isEmpty()) {
+                Text(
+                    text = "No members found for this group yet.",
+                    color = Color(0xFFB8BFCC)
+                )
+            } else {
+                members.forEach { member ->
+                    GroupMemberRow(
+                        member = member
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupMemberRow(
+    member: GroupMember
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF25104B)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!member.avatarUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = member.avatarUrl,
+                    contentDescription = "${member.displayName} avatar",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text(
+                    text = member.displayName
+                        .trim()
+                        .firstOrNull()
+                        ?.uppercase()
+                        ?: "?",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = member.displayName,
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            roleLabel(member.role)?.let { label ->
+                Text(
+                    text = label,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+private fun roleLabel(
+    role: String
+): String? {
+    return when (role.lowercase()) {
+        "owner" -> "Owner"
+        "admin" -> "Admin"
+        else -> null
     }
 }
 

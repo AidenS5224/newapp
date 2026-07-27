@@ -60,6 +60,36 @@ private data class ConversationParticipantRow(
 )
 
 @Serializable
+private data class GroupParticipantRow(
+    @SerialName("profile_id")
+    val profileId: String,
+
+    val role: String = "member",
+
+    @SerialName("joined_at")
+    val joinedAt: String
+)
+
+@Serializable
+private data class GroupMemberProfileRow(
+    val id: String,
+
+    @SerialName("display_name")
+    val displayName: String,
+
+    @SerialName("avatar_url")
+    val avatarUrl: String? = null
+)
+
+data class GroupMember(
+    val profileId: String,
+    val displayName: String,
+    val avatarUrl: String?,
+    val role: String,
+    val joinedAt: String
+)
+
+@Serializable
 private data class UnreadMessageRow(
     @SerialName("conversation_id")
     val conversationId: String,
@@ -317,6 +347,65 @@ class MessagesRepository {
     }
 
     private val client = SupabaseProvider.client
+
+    suspend fun getGroupMembers(
+        conversationId: String
+    ): List<GroupMember> {
+        client.auth.currentUserOrNull()
+            ?: error("No signed-in user.")
+
+        require(conversationId.isNotBlank()) {
+            "Conversation ID is required."
+        }
+
+        val participantRows = client
+            .from("conversation_participants")
+            .select {
+                filter {
+                    eq("conversation_id", conversationId)
+                }
+
+                order(
+                    column = "joined_at",
+                    order = Order.ASCENDING
+                )
+            }
+            .decodeList<GroupParticipantRow>()
+
+        if (participantRows.isEmpty()) {
+            return emptyList()
+        }
+
+        val profileIds = participantRows
+            .map { participant -> participant.profileId }
+            .distinct()
+
+        val profiles = client
+            .from("profiles")
+            .select {
+                filter {
+                    isIn("id", profileIds)
+                }
+            }
+            .decodeList<GroupMemberProfileRow>()
+
+        val profileById = profiles.associateBy {
+            it.id
+        }
+
+        return participantRows.map { participant ->
+            val profile = profileById[participant.profileId]
+
+            GroupMember(
+                profileId = participant.profileId,
+                displayName = profile?.displayName
+                    ?: "Unknown player",
+                avatarUrl = profile?.avatarUrl,
+                role = participant.role,
+                joinedAt = participant.joinedAt
+            )
+        }
+    }
 
     suspend fun getMyConversations(): List<Conversation> {
         val userId = client.auth.currentUserOrNull()?.id
