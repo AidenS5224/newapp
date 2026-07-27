@@ -19,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import com.gamerconnect.testclient.feature.discovery.DiscoveryScreen
 import com.gamerconnect.testclient.feature.feed.FeedScreen
 import com.gamerconnect.testclient.feature.groups.GroupsScreen
+import com.gamerconnect.testclient.feature.groups.GroupDetailsScreen
 import com.gamerconnect.testclient.feature.messages.MessagesScreen
 import com.gamerconnect.testclient.feature.profile.ProfileScreen
 import com.gamerconnect.testclient.navigation.AppDestination
@@ -100,11 +101,15 @@ fun GamerConnectApp(
 
             composable(AppDestination.Messages.route) {
                 MessagesScreen(
-                    onConversationClick = { conversationId, conversationTitle ->
+                    onConversationClick = {
+                            conversationId,
+                            conversationTitle,
+                            conversationType ->
                         navController.navigate(
                             AppDestination.Chat.createRoute(
-                                conversationId = conversationId,
-                                conversationTitle = Uri.encode(conversationTitle)
+                                conversationId = Uri.encode(conversationId),
+                                conversationTitle = Uri.encode(conversationTitle),
+                                conversationType = Uri.encode(conversationType)
                             )
                         )
                     }
@@ -119,21 +124,59 @@ fun GamerConnectApp(
                     },
                     navArgument("conversationTitle") {
                         type = NavType.StringType
+                    },
+                    navArgument("conversationType") {
+                        type = NavType.StringType
                     }
                 )
             ) { backStackEntry ->
-                val conversationId =
+                val conversationId = Uri.decode(
                     backStackEntry.arguments?.getString("conversationId")
                         ?: return@composable
+                )
 
                 val conversationTitle = Uri.decode(
                     backStackEntry.arguments?.getString("conversationTitle")
                         ?: "Chat"
                 )
 
+                val conversationType = Uri.decode(
+                    backStackEntry.arguments?.getString("conversationType")
+                        ?: "direct"
+                )
+
                 ChatScreen(
                     conversationId = conversationId,
                     conversationTitle = conversationTitle,
+                    conversationType = conversationType,
+                    onBack = {
+                        navController.popBackStack()
+                    },
+                    onGroupDetailsClick = {
+                        navController.navigate(
+                            AppDestination.GroupDetails.createRoute(
+                                Uri.encode(conversationId)
+                            )
+                        )
+                    }
+                )
+            }
+
+            composable(
+                route = AppDestination.GroupDetails.route,
+                arguments = listOf(
+                    navArgument("conversationId") {
+                        type = NavType.StringType
+                    }
+                )
+            ) { backStackEntry ->
+                val conversationId = Uri.decode(
+                    backStackEntry.arguments?.getString("conversationId")
+                        ?: return@composable
+                )
+
+                GroupDetailsScreen(
+                    conversationId = conversationId,
                     onBack = {
                         navController.popBackStack()
                     }

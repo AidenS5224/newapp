@@ -30,15 +30,28 @@ sealed class AppDestination(
     )
 
     data object Chat : AppDestination(
-        route = "chat/{conversationId}/{conversationTitle}",
+        route = "chat/{conversationId}/{conversationTitle}/{conversationType}",
         label = "Chat",
         symbol = ""
     ) {
         fun createRoute(
             conversationId: String,
-            conversationTitle: String
+            conversationTitle: String,
+            conversationType: String
         ): String {
-            return "chat/$conversationId/$conversationTitle"
+            return "chat/$conversationId/$conversationTitle/$conversationType"
+        }
+    }
+
+    data object GroupDetails : AppDestination(
+        route = "group-details/{conversationId}",
+        label = "Group details",
+        symbol = ""
+    ) {
+        fun createRoute(
+            conversationId: String
+        ): String {
+            return "group-details/$conversationId"
         }
     }
 
