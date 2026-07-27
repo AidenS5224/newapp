@@ -18,6 +18,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -95,6 +96,14 @@ fun DiscoveryScreen(
 
         when (selectedTab) {
             0 -> {
+                LfgSearchAndFilters(
+                    searchQuery = lfgState.searchQuery,
+                    statusFilter = lfgState.statusFilter,
+                    onSearchQueryChange = lfgViewModel::updateSearchQuery,
+                    onClearSearch = lfgViewModel::clearSearch,
+                    onStatusFilterChange = lfgViewModel::updateStatusFilter
+                )
+
                 when {
                     lfgState.isLoading -> {
                         Text(
@@ -112,13 +121,20 @@ fun DiscoveryScreen(
 
                     lfgState.posts.isEmpty() -> {
                         Text(
-                            text = "No open LFG posts.",
+                            text = "No LFG posts yet.",
+                            color = Color(0xFF9CA3AF)
+                        )
+                    }
+
+                    lfgState.filteredPosts.isEmpty() -> {
+                        Text(
+                            text = "No LFG posts match your search and filters.",
                             color = Color(0xFF9CA3AF)
                         )
                     }
 
                     else -> {
-                        lfgState.posts.forEach { post ->
+                        lfgState.filteredPosts.forEach { post ->
                             LfgPostCard(
                                 post = post,
                                 isOwner = post.profileId == lfgState.currentUserId,
@@ -219,6 +235,104 @@ fun DiscoveryScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LfgSearchAndFilters(
+    searchQuery: String,
+    statusFilter: LfgStatusFilter,
+    onSearchQueryChange: (String) -> Unit,
+    onClearSearch: () -> Unit,
+    onStatusFilterChange: (LfgStatusFilter) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF0B1220)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    label = {
+                        Text("Search LFG")
+                    },
+                    placeholder = {
+                        Text("Game, post, owner, rank...")
+                    },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+
+                if (searchQuery.isNotBlank()) {
+                    Button(
+                        onClick = onClearSearch,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1F2937)
+                        )
+                    ) {
+                        Text(
+                            text = "Clear",
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                LfgStatusFilter.entries.forEach { filter ->
+                    LfgStatusFilterChip(
+                        label = filter.label,
+                        selected = statusFilter == filter,
+                        onClick = {
+                            onStatusFilterChange(filter)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LfgStatusFilterChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                Color(0xFF111827)
+            }
+        )
+    ) {
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = 12.sp
+        )
     }
 }
 
