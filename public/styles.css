@@ -586,6 +586,115 @@ button { cursor: pointer; }
   border-top: 0;
   padding-top: 0;
 }
+.lfg-create-card,
+.lfg-browse-card,
+.lfg-manage-list {
+  display: grid;
+  gap: 12px;
+}
+.lfg-create-card h3,
+.lfg-create-card p,
+.lfg-browse-card h3,
+.lfg-browse-card p,
+.lfg-manage-list h3,
+.lfg-card h3,
+.lfg-card p,
+.lfg-request-list h4,
+.lfg-request-row p {
+  margin: 0;
+}
+.lfg-create-card p,
+.lfg-browse-card p,
+.lfg-card p,
+.lfg-request-row p {
+  color: var(--muted);
+}
+.lfg-filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  gap: 10px;
+}
+.lfg-list,
+.lfg-manage-list {
+  display: grid;
+  gap: 12px;
+}
+.lfg-card {
+  display: grid;
+  gap: 13px;
+  padding: 14px;
+  border: 1px solid rgba(81, 99, 126, .46);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(124, 58, 237, .16), transparent 34%),
+    rgba(7, 13, 24, .72);
+}
+.lfg-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.lfg-card-head h3 {
+  margin-top: 6px;
+  font-size: 18px;
+}
+.lfg-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.lfg-meta-grid span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(81, 99, 126, .38);
+  border-radius: 9px;
+  color: #dbeafe;
+  background: rgba(15, 23, 42, .72);
+}
+.lfg-meta-grid strong {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.lfg-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+.lfg-actions .button {
+  min-width: 130px;
+}
+.lfg-manage-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(320px, 540px);
+  gap: 16px;
+  align-items: start;
+  max-width: 920px;
+}
+.lfg-request-list {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(124, 58, 237, .36);
+  border-radius: 12px;
+  background: rgba(76, 29, 149, .14);
+}
+.lfg-request-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, .12);
+}
+.lfg-request-row:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
 .discovery-panel-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -1835,6 +1944,9 @@ button { cursor: pointer; }
   .discovery-deck-layout {
     grid-template-columns: minmax(0, 1fr);
   }
+  .lfg-manage-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .discovery-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1909,6 +2021,8 @@ button { cursor: pointer; }
   }
   .filter-row,
   .deck-actions,
+  .lfg-filter-row,
+  .lfg-request-row,
   .discovery-match-card {
     grid-template-columns: 1fr;
   }

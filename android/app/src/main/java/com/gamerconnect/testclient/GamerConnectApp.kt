@@ -238,6 +238,18 @@ fun GamerConnectApp(
                     profileId = profileId,
                     onBack = {
                         navController.popBackStack()
+                    },
+                    onDirectMessageOpened = {
+                            conversationId,
+                            conversationTitle,
+                            conversationType ->
+                        navController.navigate(
+                            AppDestination.Chat.createRoute(
+                                conversationId = Uri.encode(conversationId),
+                                conversationTitle = Uri.encode(conversationTitle),
+                                conversationType = Uri.encode(conversationType)
+                            )
+                        )
                     }
                 )
             }
