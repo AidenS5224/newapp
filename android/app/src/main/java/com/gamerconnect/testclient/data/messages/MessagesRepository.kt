@@ -351,6 +351,31 @@ class MessagesRepository {
 
     private val client = SupabaseProvider.client
 
+    fun getCurrentUserId(): String? {
+        return client.auth.currentUserOrNull()?.id
+    }
+
+    suspend fun transferGroupOwnership(
+        conversationId: String,
+        newOwnerProfileId: String
+    ) {
+        require(conversationId.isNotBlank()) {
+            "Conversation ID is required."
+        }
+
+        require(newOwnerProfileId.isNotBlank()) {
+            "New owner is required."
+        }
+
+        client.postgrest.rpc(
+            function = "transfer_group_ownership",
+            parameters = buildJsonObject {
+                put("target_conversation_id", conversationId)
+                put("new_owner_profile_id", newOwnerProfileId)
+            }
+        )
+    }
+
     suspend fun leaveGroupConversation(
         conversationId: String
     ) {
