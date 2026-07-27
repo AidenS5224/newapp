@@ -71,6 +71,22 @@ fun GroupDetailsScreen(
         mutableStateOf(false)
     }
 
+    var isTransferringOwnership by remember(conversationId) {
+        mutableStateOf(false)
+    }
+
+    var showTransferConfirmation by remember(conversationId) {
+        mutableStateOf(false)
+    }
+
+    var selectedTransferMember by remember(conversationId) {
+        mutableStateOf<GroupMember?>(null)
+    }
+
+    var currentUserId by remember(conversationId) {
+        mutableStateOf<String?>(null)
+    }
+
     var groupConversation by remember(conversationId) {
         mutableStateOf<Conversation?>(null)
     }
@@ -87,12 +103,25 @@ fun GroupDetailsScreen(
         mutableStateOf<String?>(null)
     }
 
+    var transferErrorMessage by remember(conversationId) {
+        mutableStateOf<String?>(null)
+    }
+
+    var transferSuccessMessage by remember(conversationId) {
+        mutableStateOf<String?>(null)
+    }
+
     LaunchedEffect(conversationId) {
         isLoading = true
         errorMessage = null
         leaveErrorMessage = null
+        transferErrorMessage = null
+        transferSuccessMessage = null
 
         runCatching {
+            val userId = repository.getCurrentUserId()
+                ?: error("No signed-in user.")
+
             val conversation = repository
                 .getMyConversations()
                 .firstOrNull { conversation ->
@@ -106,10 +135,11 @@ fun GroupDetailsScreen(
                 repository.getGroupMembers(conversationId)
             }
 
-            conversation to members
-        }.onSuccess { conversation ->
-            groupConversation = conversation.first
-            groupMembers = conversation.second
+            Triple(conversation, members, userId)
+        }.onSuccess { groupDetails ->
+            groupConversation = groupDetails.first
+            groupMembers = groupDetails.second
+            currentUserId = groupDetails.third
             isLoading = false
         }.onFailure { error ->
             errorMessage = error.message
@@ -160,6 +190,10 @@ fun GroupDetailsScreen(
         }
 
         val loadedConversation = groupConversation
+        val isCurrentUserOwner = groupMembers.any { member ->
+            member.profileId == currentUserId &&
+                    member.role.equals("owner", ignoreCase = true)
+        }
 
         when {
             isLoading -> {
@@ -249,6 +283,41 @@ fun GroupDetailsScreen(
                         members = groupMembers
                     )
 
+                    if (transferSuccessMessage != null) {
+                        GroupDetailsStatusCard {
+                            Text(
+                                text = transferSuccessMessage
+                                    ?: "Ownership transferred.",
+                                color = Color(0xFF34D399),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    if (isCurrentUserOwner) {
+                        OwnerControlsCard(
+                            members = groupMembers,
+                            currentUserId = currentUserId,
+                            selectedMember = selectedTransferMember,
+                            isTransferring = isTransferringOwnership,
+                            errorMessage = transferErrorMessage,
+                            onMemberSelected = { member ->
+                                selectedTransferMember = member
+                                transferErrorMessage = null
+                                transferSuccessMessage = null
+                            },
+                            onTransferClick = {
+                                if (selectedTransferMember == null) {
+                                    transferErrorMessage =
+                                        "Choose another member to make owner."
+                                } else {
+                                    showTransferConfirmation = true
+                                }
+                            }
+                        )
+                    }
+
                     LeaveGroupCard(
                         isLeaving = isLeaving,
                         errorMessage = leaveErrorMessage,
@@ -334,6 +403,238 @@ fun GroupDetailsScreen(
             },
             containerColor = Color(0xFF0B1220)
         )
+    }
+
+    if (showTransferConfirmation) {
+        val targetMember = selectedTransferMember
+
+        AlertDialog(
+            onDismissRequest = {
+                if (!isTransferringOwnership) {
+                    showTransferConfirmation = false
+                }
+            },
+            title = {
+                Text(
+                    text = "Transfer ownership?",
+                    color = Color.White
+                )
+            },
+            text = {
+                Text(
+                    text = "Make ${targetMember?.displayName ?: "this member"} the group owner? You will become a normal member and can leave afterward.",
+                    color = Color(0xFFB8BFCC)
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isTransferringOwnership && targetMember != null,
+                    onClick = {
+                        val member = selectedTransferMember
+                            ?: return@TextButton
+
+                        if (isTransferringOwnership) {
+                            return@TextButton
+                        }
+
+                        isTransferringOwnership = true
+                        transferErrorMessage = null
+                        transferSuccessMessage = null
+
+                        coroutineScope.launch {
+                            runCatching {
+                                repository.transferGroupOwnership(
+                                    conversationId = conversationId,
+                                    newOwnerProfileId = member.profileId
+                                )
+                            }.onSuccess {
+                                val refreshedMembers =
+                                    repository.getGroupMembers(conversationId)
+
+                                groupMembers = refreshedMembers
+                                selectedTransferMember = null
+                                isTransferringOwnership = false
+                                showTransferConfirmation = false
+                                transferSuccessMessage =
+                                    "${member.displayName} is now the owner."
+                            }.onFailure { error ->
+                                isTransferringOwnership = false
+                                showTransferConfirmation = false
+                                transferErrorMessage = error.message
+                                    ?: "Unable to transfer ownership right now."
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        text = if (isTransferringOwnership) {
+                            "Transferring..."
+                        } else {
+                            "Transfer"
+                        },
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isTransferringOwnership,
+                    onClick = {
+                        showTransferConfirmation = false
+                    }
+                ) {
+                    Text(
+                        text = "Cancel",
+                        color = Color(0xFFB8BFCC)
+                    )
+                }
+            },
+            containerColor = Color(0xFF0B1220)
+        )
+    }
+}
+
+@Composable
+private fun OwnerControlsCard(
+    members: List<GroupMember>,
+    currentUserId: String?,
+    selectedMember: GroupMember?,
+    isTransferring: Boolean,
+    errorMessage: String?,
+    onMemberSelected: (GroupMember) -> Unit,
+    onTransferClick: () -> Unit
+) {
+    val eligibleMembers = members.filter { member ->
+        member.profileId != currentUserId
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF0B1220)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Owner controls",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = "Transfer ownership to another current member.",
+                color = Color(0xFFB8BFCC),
+                fontSize = 14.sp
+            )
+
+            if (eligibleMembers.isEmpty()) {
+                Text(
+                    text = "There are no other members to transfer ownership to yet.",
+                    color = Color(0xFFB8BFCC),
+                    fontSize = 14.sp
+                )
+            } else {
+                eligibleMembers.forEach { member ->
+                    OwnerTransferMemberRow(
+                        member = member,
+                        selected = selectedMember?.profileId == member.profileId,
+                        enabled = !isTransferring,
+                        onClick = {
+                            onMemberSelected(member)
+                        }
+                    )
+                }
+
+                Button(
+                    onClick = onTransferClick,
+                    enabled = !isTransferring,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        disabledContainerColor = Color(0xFF3F2A63)
+                    )
+                ) {
+                    Text(
+                        text = if (isTransferring) {
+                            "Transferring..."
+                        } else {
+                            "Transfer ownership"
+                        },
+                        color = Color.White
+                    )
+                }
+            }
+
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 14.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OwnerTransferMemberRow(
+    member: GroupMember,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                Color(0xFF25104B)
+            } else {
+                Color(0xFF111827)
+            },
+            disabledContainerColor = Color(0xFF111827)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            MemberAvatar(
+                displayName = member.displayName,
+                avatarUrl = member.avatarUrl,
+                size = 40
+            )
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = member.displayName,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = if (selected) {
+                        "Selected"
+                    } else {
+                        "Member"
+                    },
+                    color = Color(0xFFB8BFCC),
+                    fontSize = 12.sp
+                )
+            }
+        }
     }
 }
 
@@ -455,32 +756,11 @@ private fun GroupMemberRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF25104B)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (!member.avatarUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = member.avatarUrl,
-                    contentDescription = "${member.displayName} avatar",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Text(
-                    text = member.displayName
-                        .trim()
-                        .firstOrNull()
-                        ?.uppercase()
-                        ?: "?",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
+        MemberAvatar(
+            displayName = member.displayName,
+            avatarUrl = member.avatarUrl,
+            size = 48
+        )
 
         Column(
             modifier = Modifier.weight(1f),
@@ -501,6 +781,40 @@ private fun GroupMemberRow(
                     fontWeight = FontWeight.Bold
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun MemberAvatar(
+    displayName: String,
+    avatarUrl: String?,
+    size: Int
+) {
+    Box(
+        modifier = Modifier
+            .size(size.dp)
+            .clip(CircleShape)
+            .background(Color(0xFF25104B)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (!avatarUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = avatarUrl,
+                contentDescription = "$displayName avatar",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Text(
+                text = displayName
+                    .trim()
+                    .firstOrNull()
+                    ?.uppercase()
+                    ?: "?",
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
