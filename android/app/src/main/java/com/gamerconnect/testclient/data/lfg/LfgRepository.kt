@@ -1,16 +1,23 @@
 package com.gamerconnect.testclient.data.lfg
 
 import com.gamerconnect.testclient.data.supabase.SupabaseProvider
-import io.github.jan.supabase.postgrest.from
-import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.realtime.PostgresAction
+import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.realtime.postgresChangeFlow
+import io.github.jan.supabase.realtime.realtime
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import io.github.jan.supabase.postgrest.postgrest
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import java.util.UUID
 
 
 
@@ -53,6 +60,88 @@ private data class AcceptLfgJoinRequestParams(
 
 class LfgRepository {
 
+    fun observeLfgLifecycleChanges(): Flow<Unit> = callbackFlow {
+        client.realtime.connect()
+
+        val channel = client.realtime.channel(
+            channelId = "lfg-lifecycle-${UUID.randomUUID()}"
+        )
+
+        val insertedPosts = channel.postgresChangeFlow<PostgresAction.Insert>(
+            schema = "public"
+        ) {
+            table = "lfg_posts"
+        }
+
+        val updatedPosts = channel.postgresChangeFlow<PostgresAction.Update>(
+            schema = "public"
+        ) {
+            table = "lfg_posts"
+        }
+
+        val insertedRequests = channel.postgresChangeFlow<PostgresAction.Insert>(
+            schema = "public"
+        ) {
+            table = "lfg_join_requests"
+        }
+
+        val updatedRequests = channel.postgresChangeFlow<PostgresAction.Update>(
+            schema = "public"
+        ) {
+            table = "lfg_join_requests"
+        }
+
+        val insertedMembers = channel.postgresChangeFlow<PostgresAction.Insert>(
+            schema = "public"
+        ) {
+            table = "lfg_members"
+        }
+
+        val postInsertJob = launch {
+            insertedPosts.collect {
+                trySend(Unit)
+            }
+        }
+
+        val postUpdateJob = launch {
+            updatedPosts.collect {
+                trySend(Unit)
+            }
+        }
+
+        val requestInsertJob = launch {
+            insertedRequests.collect {
+                trySend(Unit)
+            }
+        }
+
+        val requestUpdateJob = launch {
+            updatedRequests.collect {
+                trySend(Unit)
+            }
+        }
+
+        val memberInsertJob = launch {
+            insertedMembers.collect {
+                trySend(Unit)
+            }
+        }
+
+        channel.subscribe(blockUntilSubscribed = true)
+
+        awaitClose {
+            postInsertJob.cancel()
+            postUpdateJob.cancel()
+            requestInsertJob.cancel()
+            requestUpdateJob.cancel()
+            memberInsertJob.cancel()
+
+            launch {
+                client.realtime.removeChannel(channel)
+            }
+        }
+    }
+
     suspend fun acceptJoinRequest(
         requestId: String
     ) {
@@ -86,6 +175,25 @@ class LfgRepository {
                     eq("id", requestId)
                 }
             }
+    }
+
+    suspend fun closeLfgPost(
+        lfgPostId: String
+    ) {
+        require(lfgPostId.isNotBlank()) {
+            "LFG post ID is required."
+        }
+
+        client.postgrest.rpc(
+            function = "close_lfg_post",
+            parameters = buildJsonObject {
+                put("post_id", lfgPostId)
+            }
+        )
+    }
+
+    fun currentUserId(): String? {
+        return client.auth.currentUserOrNull()?.id
     }
 
     suspend fun getPendingRequestsForOwnedPosts(): List<LfgJoinRequest> {
@@ -197,10 +305,6 @@ class LfgRepository {
         return client
             .from("lfg_posts")
             .select {
-                filter {
-                    eq("status", "open")
-                }
-
                 order(
                     column = "created_at",
                     order = Order.DESCENDING
