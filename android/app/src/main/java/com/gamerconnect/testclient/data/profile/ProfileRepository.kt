@@ -4,6 +4,7 @@ import com.gamerconnect.testclient.data.supabase.SupabaseProvider
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
@@ -39,6 +40,26 @@ private data class ConnectionRow(
     val status: String
 )
 
+@Serializable
+private data class UpdateProfileRequest(
+    @SerialName("display_name")
+    val displayName: String,
+
+    val region: String,
+
+    val platforms: List<String>,
+
+    @SerialName("top_games")
+    val topGames: List<String>,
+
+    val bio: String
+)
+
+@Serializable
+private data class GameNameRow(
+    val name: String
+)
+
 class ProfileRepository {
 
     private val client = SupabaseProvider.client
@@ -66,6 +87,51 @@ class ProfileRepository {
             }
             .decodeSingle<UserProfile>()
     }
+
+    suspend fun updateCurrentProfile(
+        displayName: String,
+        region: String,
+        platforms: List<String>,
+        topGames: List<String>,
+        bio: String
+    ): UserProfile {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+
+        client
+            .from("profiles")
+            .update(
+                UpdateProfileRequest(
+                    displayName = displayName,
+                    region = region,
+                    platforms = platforms,
+                    topGames = topGames,
+                    bio = bio
+                )
+            ) {
+                filter {
+                    eq("id", userId)
+                }
+            }
+
+        return getCurrentProfile()
+    }
+
+    suspend fun getAvailableGameNames(): List<String> {
+        return client
+            .from("games")
+            .select {
+                order(
+                    column = "name",
+                    order = Order.ASCENDING
+                )
+            }
+            .decodeList<GameNameRow>()
+            .map {
+                it.name
+            }
+    }
+
     suspend fun getDiscoveryProfiles(): List<UserProfile> {
         val currentUserId = client.auth.currentUserOrNull()?.id
             ?: error("No signed-in user.")
