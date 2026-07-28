@@ -23,6 +23,12 @@ sealed class AppDestination(
         symbol = "▣"
     )
 
+    data object CreateFeedPost : AppDestination(
+        route = "feed/create",
+        label = "Create post",
+        symbol = "+"
+    )
+
     data object Messages : AppDestination(
         route = "messages",
         label = "Messages",
