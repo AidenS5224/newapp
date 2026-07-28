@@ -14,13 +14,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,6 +43,7 @@ import coil3.compose.AsyncImage
 import com.gamerconnect.testclient.data.messages.MessagesRepository
 import com.gamerconnect.testclient.data.profile.FriendshipState
 import com.gamerconnect.testclient.data.profile.FriendshipStatus
+import com.gamerconnect.testclient.data.profile.PlayerSafetyState
 import com.gamerconnect.testclient.data.profile.ProfileRepository
 import com.gamerconnect.testclient.data.profile.UserProfile
 import kotlinx.coroutines.launch
@@ -51,7 +55,16 @@ private data class ProfileLoadResult(
     val profile: UserProfile,
     val currentUserId: String?,
     val friendshipState: FriendshipState,
+    val safetyState: PlayerSafetyState,
     val canMessage: Boolean
+)
+
+private val reportReasons = listOf(
+    "Harassment",
+    "Spam",
+    "Hate or abusive content",
+    "Impersonation",
+    "Other"
 )
 
 @Composable
@@ -97,6 +110,24 @@ fun PlayerProfileDetailsScreen(
     var friendshipError by remember(profileId) {
         mutableStateOf<String?>(null)
     }
+    var safetyState by remember(profileId) {
+        mutableStateOf(PlayerSafetyState())
+    }
+    var isSafetyActionLoading by remember(profileId) {
+        mutableStateOf(false)
+    }
+    var safetyError by remember(profileId) {
+        mutableStateOf<String?>(null)
+    }
+    var safetyMessage by remember(profileId) {
+        mutableStateOf<String?>(null)
+    }
+    var showBlockConfirmation by remember(profileId) {
+        mutableStateOf(false)
+    }
+    var showReportDialog by remember(profileId) {
+        mutableStateOf(false)
+    }
     var isOpeningDirectMessage by remember(profileId) {
         mutableStateOf(false)
     }
@@ -109,6 +140,8 @@ fun PlayerProfileDetailsScreen(
         errorMessage = null
         directMessageError = null
         friendshipError = null
+        safetyError = null
+        safetyMessage = null
 
         runCatching {
             val loadedProfile = repository.getProfile(profileId)
@@ -117,6 +150,11 @@ fun PlayerProfileDetailsScreen(
                 repository.getFriendshipWith(profileId)
             } else {
                 FriendshipState()
+            }
+            val safety = if (userId != null && userId != profileId) {
+                repository.getSafetyState(profileId)
+            } else {
+                PlayerSafetyState()
             }
             val eligible = if (userId != null && userId != profileId) {
                 messagesRepository.canStartDirectMessage(profileId)
@@ -128,12 +166,14 @@ fun PlayerProfileDetailsScreen(
                 profile = loadedProfile,
                 currentUserId = userId,
                 friendshipState = relationship,
+                safetyState = safety,
                 canMessage = eligible
             )
         }.onSuccess { result ->
             profile = result.profile
             currentUserId = result.currentUserId
             friendshipState = result.friendshipState
+            safetyState = result.safetyState
             canMessage = result.canMessage
             isLoading = false
         }.onFailure { error ->
@@ -233,18 +273,20 @@ fun PlayerProfileDetailsScreen(
             else -> {
                 val loadedProfile = profile
                 if (loadedProfile != null) {
-                    fun refreshFriendship() {
+                    fun refreshRelationshipAndSafety() {
                         coroutineScope.launch {
                             runCatching {
                                 val relationship = repository.getFriendshipWith(loadedProfile.id)
+                                val safety = repository.getSafetyState(loadedProfile.id)
                                 val eligible = messagesRepository.canStartDirectMessage(loadedProfile.id)
-                                relationship to eligible
+                                Triple(relationship, safety, eligible)
                             }.onSuccess { result ->
                                 friendshipState = result.first
-                                canMessage = result.second
+                                safetyState = result.second
+                                canMessage = result.third
                             }.onFailure { error ->
                                 friendshipError = error.message
-                                    ?: "Unable to refresh friendship status."
+                                    ?: "Unable to refresh player status."
                             }
                         }
                     }
@@ -264,7 +306,7 @@ fun PlayerProfileDetailsScreen(
                                 action()
                             }.onSuccess {
                                 isFriendActionLoading = false
-                                refreshFriendship()
+                                refreshRelationshipAndSafety()
                             }.onFailure { error ->
                                 isFriendActionLoading = false
                                 friendshipError = error.message
@@ -273,13 +315,92 @@ fun PlayerProfileDetailsScreen(
                         }
                     }
 
+                    fun runSafetyAction(
+                        successMessage: String,
+                        action: suspend () -> Unit
+                    ) {
+                        if (isSafetyActionLoading) {
+                            return
+                        }
+
+                        isSafetyActionLoading = true
+                        safetyError = null
+                        safetyMessage = null
+
+                        coroutineScope.launch {
+                            runCatching {
+                                action()
+                            }.onSuccess {
+                                isSafetyActionLoading = false
+                                safetyMessage = successMessage
+                                refreshRelationshipAndSafety()
+                            }.onFailure { error ->
+                                isSafetyActionLoading = false
+                                safetyError = error.message
+                                    ?: "Safety action failed. Try again."
+                            }
+                        }
+                    }
+
+                    if (showBlockConfirmation) {
+                        BlockConfirmationDialog(
+                            isBlocked = safetyState.isBlockedByCurrentUser,
+                            playerName = loadedProfile.displayName.ifBlank {
+                                "this player"
+                            },
+                            onDismiss = {
+                                showBlockConfirmation = false
+                            },
+                            onConfirm = {
+                                showBlockConfirmation = false
+                                if (safetyState.isBlockedByCurrentUser) {
+                                    runSafetyAction("Player unblocked.") {
+                                        repository.unblockPlayer(loadedProfile.id)
+                                    }
+                                } else {
+                                    runSafetyAction("Player blocked.") {
+                                        repository.blockPlayer(loadedProfile.id)
+                                    }
+                                }
+                            }
+                        )
+                    }
+
+                    if (showReportDialog) {
+                        ReportPlayerDialog(
+                            playerName = loadedProfile.displayName.ifBlank {
+                                "this player"
+                            },
+                            isSubmitting = isSafetyActionLoading,
+                            onDismiss = {
+                                if (!isSafetyActionLoading) {
+                                    showReportDialog = false
+                                }
+                            },
+                            onSubmit = { reason, description ->
+                                showReportDialog = false
+                                runSafetyAction("Report submitted. Thanks for helping keep Gamer Connect safe.") {
+                                    repository.reportPlayer(
+                                        profileId = loadedProfile.id,
+                                        reason = reason,
+                                        description = description
+                                    )
+                                }
+                            }
+                        )
+                    }
+
                     PlayerProfileContent(
                         profile = loadedProfile,
                         isOwnProfile = loadedProfile.id == currentUserId,
                         canMessage = canMessage,
                         friendshipState = friendshipState,
+                        safetyState = safetyState,
                         isFriendActionLoading = isFriendActionLoading,
+                        isSafetyActionLoading = isSafetyActionLoading,
                         friendshipError = friendshipError,
+                        safetyError = safetyError,
+                        safetyMessage = safetyMessage,
                         isOpeningDirectMessage = isOpeningDirectMessage,
                         directMessageError = directMessageError,
                         onAddFriendClick = {
@@ -307,6 +428,12 @@ fun PlayerProfileDetailsScreen(
                             runFriendAction {
                                 repository.removeFriend(loadedProfile.id)
                             }
+                        },
+                        onBlockClick = {
+                            showBlockConfirmation = true
+                        },
+                        onReportClick = {
+                            showReportDialog = true
                         },
                         onMessageClick = {
                             if (!isOpeningDirectMessage) {
@@ -348,14 +475,20 @@ private fun PlayerProfileContent(
     isOwnProfile: Boolean,
     canMessage: Boolean,
     friendshipState: FriendshipState,
+    safetyState: PlayerSafetyState,
     isFriendActionLoading: Boolean,
+    isSafetyActionLoading: Boolean,
     friendshipError: String?,
+    safetyError: String?,
+    safetyMessage: String?,
     isOpeningDirectMessage: Boolean,
     directMessageError: String?,
     onAddFriendClick: () -> Unit,
     onAcceptFriendClick: () -> Unit,
     onDeclineFriendClick: () -> Unit,
     onRemoveFriendClick: () -> Unit,
+    onBlockClick: () -> Unit,
+    onReportClick: () -> Unit,
     onMessageClick: () -> Unit
 ) {
     Column(
@@ -407,7 +540,8 @@ private fun PlayerProfileContent(
                     !isOwnProfile -> {
                         FriendshipActions(
                             friendshipState = friendshipState,
-                            canMessage = canMessage,
+                            canMessage = canMessage && !safetyState.isBlockedByCurrentUser,
+                            isBlocked = safetyState.isBlockedByCurrentUser,
                             isFriendActionLoading = isFriendActionLoading,
                             isOpeningDirectMessage = isOpeningDirectMessage,
                             onAddFriendClick = onAddFriendClick,
@@ -427,10 +561,18 @@ private fun PlayerProfileContent(
                     )
                 }
 
-                if (!isOwnProfile && !canMessage) {
+                if (!isOwnProfile && !safetyState.isBlockedByCurrentUser && !canMessage) {
                     Text(
                         text = "Become friends to message this player.",
                         color = Color(0xFFB8BFCC),
+                        fontSize = 13.sp
+                    )
+                }
+
+                if (safetyState.isBlockedByCurrentUser) {
+                    Text(
+                        text = "You blocked this player. Friend requests and direct messages are disabled until you unblock them.",
+                        color = Color(0xFFFCA5A5),
                         fontSize = 13.sp
                     )
                 }
@@ -443,6 +585,17 @@ private fun PlayerProfileContent(
                     )
                 }
             }
+        }
+
+        if (!isOwnProfile) {
+            SafetyActionsSection(
+                isBlocked = safetyState.isBlockedByCurrentUser,
+                isLoading = isSafetyActionLoading,
+                errorMessage = safetyError,
+                successMessage = safetyMessage,
+                onBlockClick = onBlockClick,
+                onReportClick = onReportClick
+            )
         }
 
         ProfileDetailsSection(
@@ -494,6 +647,7 @@ private fun PlayerProfileContent(
 private fun FriendshipActions(
     friendshipState: FriendshipState,
     canMessage: Boolean,
+    isBlocked: Boolean,
     isFriendActionLoading: Boolean,
     isOpeningDirectMessage: Boolean,
     onAddFriendClick: () -> Unit,
@@ -521,7 +675,7 @@ private fun FriendshipActions(
                 ) {
                     Button(
                         onClick = onMessageClick,
-                        enabled = canMessage && !isOpeningDirectMessage,
+                        enabled = canMessage && !isBlocked && !isOpeningDirectMessage,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             disabledContainerColor = Color(0xFF3F2A63)
@@ -579,7 +733,7 @@ private fun FriendshipActions(
                 ) {
                     Button(
                         onClick = onAcceptFriendClick,
-                        enabled = !isFriendActionLoading,
+                        enabled = !isBlocked && !isFriendActionLoading,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color(0xFF15803D),
                             disabledContainerColor = Color(0xFF12351F)
@@ -619,7 +773,7 @@ private fun FriendshipActions(
             FriendshipStatus.NONE -> {
                 Button(
                     onClick = onAddFriendClick,
-                    enabled = !isFriendActionLoading,
+                    enabled = !isBlocked && !isFriendActionLoading,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         disabledContainerColor = Color(0xFF3F2A63)
@@ -637,6 +791,264 @@ private fun FriendshipActions(
             }
         }
     }
+}
+
+@Composable
+private fun SafetyActionsSection(
+    isBlocked: Boolean,
+    isLoading: Boolean,
+    errorMessage: String?,
+    successMessage: String?,
+    onBlockClick: () -> Unit,
+    onReportClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF0B1220)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Safety",
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = "Block or report players who break the vibe.",
+                color = Color(0xFFB8BFCC),
+                fontSize = 13.sp
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick = onBlockClick,
+                    enabled = !isLoading,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isBlocked) {
+                            Color(0xFF111827)
+                        } else {
+                            Color(0xFF7F1D1D)
+                        },
+                        disabledContainerColor = Color(0xFF3F1D1D)
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = when {
+                            isLoading -> "Working..."
+                            isBlocked -> "Unblock"
+                            else -> "Block player"
+                        },
+                        color = Color.White
+                    )
+                }
+
+                Button(
+                    onClick = onReportClick,
+                    enabled = !isLoading,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF25104B),
+                        disabledContainerColor = Color(0xFF111827)
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Report player",
+                        color = Color.White
+                    )
+                }
+            }
+
+            if (!successMessage.isNullOrBlank()) {
+                Text(
+                    text = successMessage,
+                    color = Color(0xFF86EFAC),
+                    fontSize = 13.sp
+                )
+            }
+
+            if (!errorMessage.isNullOrBlank()) {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BlockConfirmationDialog(
+    isBlocked: Boolean,
+    playerName: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isBlocked) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        Color(0xFF7F1D1D)
+                    }
+                )
+            ) {
+                Text(
+                    text = if (isBlocked) {
+                        "Unblock"
+                    } else {
+                        "Block"
+                    },
+                    color = Color.White
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss
+            ) {
+                Text("Cancel")
+            }
+        },
+        title = {
+            Text(
+                text = if (isBlocked) {
+                    "Unblock $playerName?"
+                } else {
+                    "Block $playerName?"
+                }
+            )
+        },
+        text = {
+            Text(
+                text = if (isBlocked) {
+                    "They will be able to send future friend requests after you unblock them."
+                } else {
+                    "This removes any friendship and prevents new friend requests or direct messages. Shared group chats stay available."
+                }
+            )
+        },
+        containerColor = Color(0xFF0B1220),
+        titleContentColor = Color.White,
+        textContentColor = Color(0xFFB8BFCC)
+    )
+}
+
+@Composable
+private fun ReportPlayerDialog(
+    playerName: String,
+    isSubmitting: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: (String, String) -> Unit
+) {
+    var selectedReason by remember {
+        mutableStateOf(reportReasons.first())
+    }
+    var description by remember {
+        mutableStateOf("")
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSubmit(selectedReason, description)
+                },
+                enabled = !isSubmitting,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    disabledContainerColor = Color(0xFF3F2A63)
+                )
+            ) {
+                Text(
+                    text = if (isSubmitting) {
+                        "Submitting..."
+                    } else {
+                        "Submit report"
+                    },
+                    color = Color.White
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isSubmitting
+            ) {
+                Text("Cancel")
+            }
+        },
+        title = {
+            Text("Report $playerName")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Choose a reason. Reports are private.",
+                    color = Color(0xFFB8BFCC),
+                    fontSize = 13.sp
+                )
+
+                reportReasons.forEach { reason ->
+                    Button(
+                        onClick = {
+                            selectedReason = reason
+                        },
+                        enabled = !isSubmitting,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedReason == reason) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                Color(0xFF111827)
+                            }
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = reason,
+                            color = Color.White
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { value ->
+                        description = value.take(500)
+                    },
+                    label = {
+                        Text("Optional details")
+                    },
+                    placeholder = {
+                        Text("Short description")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSubmitting,
+                    minLines = 3
+                )
+            }
+        },
+        containerColor = Color(0xFF0B1220),
+        titleContentColor = Color.White,
+        textContentColor = Color(0xFFB8BFCC)
+    )
 }
 
 @Composable
