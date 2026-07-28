@@ -24,6 +24,28 @@ private data class FeedAuthorProfile(
 )
 
 @Serializable
+private data class FeedReactionRow(
+    @SerialName("post_id")
+    val postId: String,
+
+    @SerialName("profile_id")
+    val profileId: String,
+
+    val reaction: String = "like"
+)
+
+@Serializable
+private data class CreateFeedReactionRequest(
+    @SerialName("post_id")
+    val postId: String,
+
+    @SerialName("profile_id")
+    val profileId: String,
+
+    val reaction: String = "like"
+)
+
+@Serializable
 private data class CreateFeedPostRequest(
     @SerialName("profile_id")
     val profileId: String,
@@ -70,6 +92,7 @@ class FeedRepository {
     private val client = SupabaseProvider.client
 
     suspend fun getFeedPosts(): List<FeedPost> {
+        val currentUserId = client.auth.currentUserOrNull()?.id
         val posts = client
             .from("feed_posts")
             .select {
@@ -83,16 +106,72 @@ class FeedRepository {
             .decodeList<FeedPost>()
 
         val authorProfiles = getAuthorProfiles(posts)
+        val reactionsByPostId = getReactionsByPostId(posts)
 
         return posts
             .map { post ->
                 val authorProfile = authorProfiles[post.profileId]
+                val reactions = reactionsByPostId[post.id].orEmpty()
 
                 post.copy(
                     resolvedMediaUrl = resolveMediaUrl(post.mediaUrl),
                     authorDisplayName = authorProfile?.displayName,
-                    authorAvatarUrl = resolveAvatarUrl(authorProfile?.avatarUrl)
+                    authorAvatarUrl = resolveAvatarUrl(authorProfile?.avatarUrl),
+                    reactionCount = reactions.size,
+                    isReactedByCurrentUser = currentUserId?.let { userId ->
+                        reactions.any { reaction ->
+                            reaction.profileId == userId && reaction.reaction == FEED_REACTION_LIKE
+                        }
+                    } ?: false,
+                    isReactionPending = false
                 )
+            }
+    }
+
+    suspend fun addReaction(
+        postId: String
+    ) {
+        require(postId.isNotBlank()) {
+            "Post ID is required."
+        }
+
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("Sign in to react to posts.")
+
+        runCatching {
+            client
+                .from("feed_reactions")
+                .insert(
+                    CreateFeedReactionRequest(
+                        postId = postId,
+                        profileId = userId
+                    )
+                )
+        }.onFailure { error ->
+            if (!isDuplicateReactionError(error)) {
+                throw error
+            }
+        }
+    }
+
+    suspend fun removeReaction(
+        postId: String
+    ) {
+        require(postId.isNotBlank()) {
+            "Post ID is required."
+        }
+
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("Sign in to react to posts.")
+
+        client
+            .from("feed_reactions")
+            .delete {
+                filter {
+                    eq("post_id", postId)
+                    eq("profile_id", userId)
+                    eq("reaction", FEED_REACTION_LIKE)
+                }
             }
     }
 
@@ -238,6 +317,29 @@ class FeedRepository {
             .associateBy { profile -> profile.id }
     }
 
+    private suspend fun getReactionsByPostId(
+        posts: List<FeedPost>
+    ): Map<String, List<FeedReactionRow>> {
+        val postIds = posts
+            .map { post -> post.id }
+            .distinct()
+
+        if (postIds.isEmpty()) {
+            return emptyMap()
+        }
+
+        return client
+            .from("feed_reactions")
+            .select {
+                filter {
+                    isIn("post_id", postIds)
+                    eq("reaction", FEED_REACTION_LIKE)
+                }
+            }
+            .decodeList<FeedReactionRow>()
+            .groupBy { reaction -> reaction.postId }
+    }
+
     private fun resolveMediaUrl(mediaUrl: String?): String? {
         val trimmedMediaUrl = mediaUrl?.trim()
 
@@ -282,5 +384,16 @@ class FeedRepository {
         const val FEED_MEDIA_BUCKET = "feed-media"
         const val PROFILE_AVATARS_BUCKET = "profile-avatars"
         const val MAX_TITLE_LENGTH = 80
+        const val FEED_REACTION_LIKE = "like"
     }
+}
+
+private fun isDuplicateReactionError(
+    error: Throwable
+): Boolean {
+    val message = error.message.orEmpty().lowercase()
+
+    return "duplicate" in message ||
+        "23505" in message ||
+        "feed_reactions_pkey" in message
 }

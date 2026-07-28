@@ -1,6 +1,7 @@
 package com.gamerconnect.testclient.feature.feed
 
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +23,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -54,10 +57,22 @@ fun FeedScreen(
     feedViewModel: FeedViewModel = viewModel()
 ) {
     val uiState = feedViewModel.uiState.collectAsStateWithLifecycle().value
+    val context = LocalContext.current
 
     LaunchedEffect(refreshKey) {
         if (refreshKey > 0) {
             feedViewModel.loadPosts()
+        }
+    }
+
+    LaunchedEffect(uiState.reactionErrorMessage) {
+        uiState.reactionErrorMessage?.let { message ->
+            Toast.makeText(
+                context,
+                message,
+                Toast.LENGTH_SHORT
+            ).show()
+            feedViewModel.consumeReactionError()
         }
     }
 
@@ -137,7 +152,13 @@ fun FeedScreen(
                                 authorAvatarUrl = post.authorAvatarUrl,
                                 mediaUrl = post.resolvedMediaUrl,
                                 mediaType = post.mediaType,
-                                createdAt = post.createdAt
+                                createdAt = post.createdAt,
+                                reactionCount = post.reactionCount,
+                                isReactedByCurrentUser = post.isReactedByCurrentUser,
+                                isReactionPending = post.isReactionPending,
+                                onReactionClick = {
+                                    feedViewModel.toggleReaction(post.id)
+                                }
                             )
                         }
                     }
@@ -201,7 +222,11 @@ private fun FeedPostCard(
     authorAvatarUrl: String?,
     mediaUrl: String?,
     mediaType: String?,
-    createdAt: String
+    createdAt: String,
+    reactionCount: Int,
+    isReactedByCurrentUser: Boolean,
+    isReactionPending: Boolean,
+    onReactionClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -244,11 +269,14 @@ private fun FeedPostCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Like",
-                    color = MaterialTheme.colorScheme.primary
+                FeedReactionAction(
+                    reactionCount = reactionCount,
+                    isReactedByCurrentUser = isReactedByCurrentUser,
+                    isReactionPending = isReactionPending,
+                    onClick = onReactionClick
                 )
 
                 Text(
@@ -262,6 +290,49 @@ private fun FeedPostCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FeedReactionAction(
+    reactionCount: Int,
+    isReactedByCurrentUser: Boolean,
+    isReactionPending: Boolean,
+    onClick: () -> Unit
+) {
+    val safeCount = reactionCount.coerceAtLeast(0)
+    val actionLabel = if (isReactedByCurrentUser) {
+        "Unlike"
+    } else {
+        "Like"
+    }
+
+    TextButton(
+        onClick = onClick,
+        enabled = !isReactionPending,
+        modifier = Modifier.semantics {
+            contentDescription = "$actionLabel post, $safeCount likes"
+        }
+    ) {
+        Text(
+            text = if (isReactedByCurrentUser) {
+                "✓ $actionLabel $safeCount"
+            } else {
+                "+ $actionLabel $safeCount"
+            },
+            color = if (isReactedByCurrentUser) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                Color(0xFFB8BFCC)
+            },
+            fontWeight = if (isReactedByCurrentUser) {
+                FontWeight.Bold
+            } else {
+                FontWeight.Medium
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
