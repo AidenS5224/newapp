@@ -46,5 +46,8 @@ data class FeedPost(
     val isReactedByCurrentUser: Boolean = false,
 
     @kotlinx.serialization.Transient
-    val isReactionPending: Boolean = false
+    val isReactionPending: Boolean = false,
+
+    @kotlinx.serialization.Transient
+    val commentCount: Int = 0
 )

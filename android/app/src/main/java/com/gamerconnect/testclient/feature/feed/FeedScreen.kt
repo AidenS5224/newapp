@@ -52,6 +52,7 @@ import coil3.compose.AsyncImage
 @Composable
 fun FeedScreen(
     onCreatePostClick: () -> Unit = {},
+    onCommentsClick: (String) -> Unit = {},
     refreshKey: Int = 0,
     modifier: Modifier = Modifier,
     feedViewModel: FeedViewModel = viewModel()
@@ -158,6 +159,10 @@ fun FeedScreen(
                                 isReactionPending = post.isReactionPending,
                                 onReactionClick = {
                                     feedViewModel.toggleReaction(post.id)
+                                },
+                                commentCount = post.commentCount,
+                                onCommentsClick = {
+                                    onCommentsClick(post.id)
                                 }
                             )
                         }
@@ -226,7 +231,9 @@ private fun FeedPostCard(
     reactionCount: Int,
     isReactedByCurrentUser: Boolean,
     isReactionPending: Boolean,
-    onReactionClick: () -> Unit
+    onReactionClick: () -> Unit,
+    commentCount: Int,
+    onCommentsClick: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -279,10 +286,19 @@ private fun FeedPostCard(
                     onClick = onReactionClick
                 )
 
-                Text(
-                    text = "Comments",
-                    color = Color(0xFFB8BFCC)
-                )
+                TextButton(
+                    onClick = onCommentsClick,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Open comments, ${commentCount.coerceAtLeast(0)} comments"
+                    }
+                ) {
+                    Text(
+                        text = "Comments ${commentCount.coerceAtLeast(0)}",
+                        color = Color(0xFFB8BFCC),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
                 Text(
                     text = "Share",
