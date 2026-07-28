@@ -31,5 +31,11 @@ data class FeedPost(
     val createdAt: String,
 
     @kotlinx.serialization.Transient
-    val resolvedMediaUrl: String? = null
+    val resolvedMediaUrl: String? = null,
+
+    @kotlinx.serialization.Transient
+    val authorDisplayName: String? = null,
+
+    @kotlinx.serialization.Transient
+    val authorAvatarUrl: String? = null
 )

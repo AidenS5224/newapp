@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -32,6 +34,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -113,6 +116,9 @@ fun FeedScreen(
                         FeedPostCard(
                             title = post.title,
                             body = post.body,
+                            authorDisplayName = post.authorDisplayName
+                                ?: "Unknown player",
+                            authorAvatarUrl = post.authorAvatarUrl,
                             mediaUrl = post.resolvedMediaUrl,
                             mediaType = post.mediaType,
                             createdAt = post.createdAt
@@ -156,6 +162,8 @@ private fun FeedTab(
 private fun FeedPostCard(
     title: String,
     body: String,
+    authorDisplayName: String,
+    authorAvatarUrl: String?,
     mediaUrl: String?,
     mediaType: String?,
     createdAt: String
@@ -171,17 +179,17 @@ private fun FeedPostCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            FeedAuthorHeader(
+                displayName = authorDisplayName,
+                avatarUrl = authorAvatarUrl,
+                timestamp = createdAt
+            )
+
             Text(
                 text = title,
                 color = Color.White,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold
-            )
-
-            Text(
-                text = createdAt,
-                color = Color(0xFF8D94A3),
-                fontSize = 13.sp
             )
 
             Text(
@@ -194,7 +202,7 @@ private fun FeedPostCard(
                 FeedMedia(
                     mediaUrl = mediaUrl,
                     mediaType = mediaType,
-                    authorName = null,
+                    authorName = authorDisplayName,
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
@@ -218,6 +226,87 @@ private fun FeedPostCard(
                     color = Color(0xFFB8BFCC)
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun FeedAuthorHeader(
+    displayName: String,
+    avatarUrl: String?,
+    timestamp: String,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        FeedAuthorAvatar(
+            displayName = displayName,
+            avatarUrl = avatarUrl
+        )
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = displayName,
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Text(
+                text = timestamp,
+                color = Color(0xFF8D94A3),
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun FeedAuthorAvatar(
+    displayName: String,
+    avatarUrl: String?
+) {
+    var imageFailed by remember(avatarUrl) {
+        mutableStateOf(false)
+    }
+
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(Color(0xFF25104B)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (!avatarUrl.isNullOrBlank() && !imageFailed) {
+            AsyncImage(
+                model = avatarUrl,
+                contentDescription = "$displayName profile picture",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onError = {
+                    imageFailed = true
+                }
+            )
+        } else {
+            Text(
+                text = displayName
+                    .trim()
+                    .firstOrNull()
+                    ?.uppercase()
+                    ?: "?",
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
