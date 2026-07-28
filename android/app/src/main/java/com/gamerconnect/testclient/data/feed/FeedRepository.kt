@@ -46,6 +46,19 @@ private data class CreateFeedReactionRequest(
 )
 
 @Serializable
+private data class CreateFeedCommentRequest(
+    val id: String,
+
+    @SerialName("post_id")
+    val postId: String,
+
+    @SerialName("profile_id")
+    val profileId: String,
+
+    val body: String
+)
+
+@Serializable
 private data class CreateFeedPostRequest(
     @SerialName("profile_id")
     val profileId: String,
@@ -107,11 +120,13 @@ class FeedRepository {
 
         val authorProfiles = getAuthorProfiles(posts)
         val reactionsByPostId = getReactionsByPostId(posts)
+        val commentsByPostId = getCommentsByPostId(posts)
 
         return posts
             .map { post ->
                 val authorProfile = authorProfiles[post.profileId]
                 val reactions = reactionsByPostId[post.id].orEmpty()
+                val comments = commentsByPostId[post.id].orEmpty()
 
                 post.copy(
                     resolvedMediaUrl = resolveMediaUrl(post.mediaUrl),
@@ -123,9 +138,29 @@ class FeedRepository {
                             reaction.profileId == userId && reaction.reaction == FEED_REACTION_LIKE
                         }
                     } ?: false,
-                    isReactionPending = false
+                    isReactionPending = false,
+                    commentCount = comments.size
                 )
             }
+    }
+
+    suspend fun getFeedPost(
+        postId: String
+    ): FeedPost {
+        require(postId.isNotBlank()) {
+            "Post ID is required."
+        }
+
+        val post = client
+            .from("feed_posts")
+            .select {
+                filter {
+                    eq("id", postId)
+                }
+            }
+            .decodeSingle<FeedPost>()
+
+        return enrichPosts(listOf(post)).first()
     }
 
     suspend fun addReaction(
@@ -173,6 +208,72 @@ class FeedRepository {
                     eq("reaction", FEED_REACTION_LIKE)
                 }
             }
+    }
+
+    suspend fun getComments(
+        postId: String
+    ): List<FeedComment> {
+        require(postId.isNotBlank()) {
+            "Post ID is required."
+        }
+
+        val comments = client
+            .from("feed_comments")
+            .select {
+                filter {
+                    eq("post_id", postId)
+                }
+
+                order(
+                    column = "created_at",
+                    order = Order.ASCENDING
+                )
+            }
+            .decodeList<FeedComment>()
+
+        return enrichComments(comments)
+    }
+
+    suspend fun createComment(
+        postId: String,
+        body: String
+    ): FeedComment {
+        require(postId.isNotBlank()) {
+            "Post ID is required."
+        }
+
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("Sign in to comment.")
+        val trimmedBody = body.trim()
+
+        require(trimmedBody.isNotBlank()) {
+            "Add a comment before sending."
+        }
+
+        require(trimmedBody.length <= MAX_COMMENT_LENGTH) {
+            "Comment is too long."
+        }
+
+        val comment = FeedComment(
+            id = UUID.randomUUID().toString(),
+            postId = postId,
+            profileId = userId,
+            body = trimmedBody,
+            createdAt = ""
+        )
+
+        client
+            .from("feed_comments")
+            .insert(
+                CreateFeedCommentRequest(
+                    id = comment.id,
+                    postId = postId,
+                    profileId = userId,
+                    body = trimmedBody
+                )
+            )
+
+        return getComment(comment.id)
     }
 
     suspend fun createPost(
@@ -317,6 +418,35 @@ class FeedRepository {
             .associateBy { profile -> profile.id }
     }
 
+    private suspend fun enrichPosts(
+        posts: List<FeedPost>
+    ): List<FeedPost> {
+        val currentUserId = client.auth.currentUserOrNull()?.id
+        val authorProfiles = getAuthorProfiles(posts)
+        val reactionsByPostId = getReactionsByPostId(posts)
+        val commentsByPostId = getCommentsByPostId(posts)
+
+        return posts.map { post ->
+            val authorProfile = authorProfiles[post.profileId]
+            val reactions = reactionsByPostId[post.id].orEmpty()
+            val comments = commentsByPostId[post.id].orEmpty()
+
+            post.copy(
+                resolvedMediaUrl = resolveMediaUrl(post.mediaUrl),
+                authorDisplayName = authorProfile?.displayName,
+                authorAvatarUrl = resolveAvatarUrl(authorProfile?.avatarUrl),
+                reactionCount = reactions.size,
+                isReactedByCurrentUser = currentUserId?.let { userId ->
+                    reactions.any { reaction ->
+                        reaction.profileId == userId && reaction.reaction == FEED_REACTION_LIKE
+                    }
+                } ?: false,
+                isReactionPending = false,
+                commentCount = comments.size
+            )
+        }
+    }
+
     private suspend fun getReactionsByPostId(
         posts: List<FeedPost>
     ): Map<String, List<FeedReactionRow>> {
@@ -338,6 +468,74 @@ class FeedRepository {
             }
             .decodeList<FeedReactionRow>()
             .groupBy { reaction -> reaction.postId }
+    }
+
+    private suspend fun getCommentsByPostId(
+        posts: List<FeedPost>
+    ): Map<String, List<FeedComment>> {
+        val postIds = posts
+            .map { post -> post.id }
+            .distinct()
+
+        if (postIds.isEmpty()) {
+            return emptyMap()
+        }
+
+        return client
+            .from("feed_comments")
+            .select {
+                filter {
+                    isIn("post_id", postIds)
+                }
+            }
+            .decodeList<FeedComment>()
+            .groupBy { comment -> comment.postId }
+    }
+
+    private suspend fun getComment(
+        commentId: String
+    ): FeedComment {
+        return enrichComments(
+            client
+                .from("feed_comments")
+                .select {
+                    filter {
+                        eq("id", commentId)
+                    }
+                }
+                .decodeList<FeedComment>()
+        ).firstOrNull() ?: error("Comment was not found.")
+    }
+
+    private suspend fun enrichComments(
+        comments: List<FeedComment>
+    ): List<FeedComment> {
+        val authorIds = comments
+            .map { comment -> comment.profileId }
+            .distinct()
+
+        if (authorIds.isEmpty()) {
+            return comments
+        }
+
+        val authorProfiles = client
+            .from("profiles")
+            .select {
+                filter {
+                    isIn("id", authorIds)
+                }
+            }
+            .decodeList<FeedAuthorProfile>()
+            .associateBy { profile -> profile.id }
+
+        return comments.map { comment ->
+            val authorProfile = authorProfiles[comment.profileId]
+
+            comment.copy(
+                authorDisplayName = authorProfile?.displayName,
+                authorAvatarUrl = resolveAvatarUrl(authorProfile?.avatarUrl)
+            )
+        }
     }
 
     private fun resolveMediaUrl(mediaUrl: String?): String? {
@@ -384,6 +582,7 @@ class FeedRepository {
         const val FEED_MEDIA_BUCKET = "feed-media"
         const val PROFILE_AVATARS_BUCKET = "profile-avatars"
         const val MAX_TITLE_LENGTH = 80
+        const val MAX_COMMENT_LENGTH = 1000
         const val FEED_REACTION_LIKE = "like"
     }
 }

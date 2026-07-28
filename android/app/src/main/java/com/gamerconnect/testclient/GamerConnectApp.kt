@@ -22,6 +22,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.gamerconnect.testclient.feature.discovery.DiscoveryScreen
 import com.gamerconnect.testclient.feature.feed.CreateFeedPostScreen
+import com.gamerconnect.testclient.feature.feed.FeedCommentsScreen
 import com.gamerconnect.testclient.feature.feed.FeedScreen
 import com.gamerconnect.testclient.feature.groups.GroupsScreen
 import com.gamerconnect.testclient.feature.groups.GroupDetailsScreen
@@ -117,6 +118,13 @@ fun GamerConnectApp(
                     refreshKey = feedRefreshKey,
                     onCreatePostClick = {
                         navController.navigate(AppDestination.CreateFeedPost.route)
+                    },
+                    onCommentsClick = { postId ->
+                        navController.navigate(
+                            AppDestination.FeedComments.createRoute(
+                                Uri.encode(postId)
+                            )
+                        )
                     }
                 )
             }
@@ -127,6 +135,28 @@ fun GamerConnectApp(
                         navController.popBackStack()
                     },
                     onPublished = {
+                        feedRefreshKey += 1
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+            composable(
+                route = AppDestination.FeedComments.route,
+                arguments = listOf(
+                    navArgument("postId") {
+                        type = NavType.StringType
+                    }
+                )
+            ) { backStackEntry ->
+                val postId = Uri.decode(
+                    backStackEntry.arguments?.getString("postId")
+                        ?: return@composable
+                )
+
+                FeedCommentsScreen(
+                    postId = postId,
+                    onBack = {
                         feedRefreshKey += 1
                         navController.popBackStack()
                     }

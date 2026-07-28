@@ -29,6 +29,18 @@ sealed class AppDestination(
         symbol = "+"
     )
 
+    data object FeedComments : AppDestination(
+        route = "feed/comments/{postId}",
+        label = "Comments",
+        symbol = ""
+    ) {
+        fun createRoute(
+            postId: String
+        ): String {
+            return "feed/comments/$postId"
+        }
+    }
+
     data object Messages : AppDestination(
         route = "messages",
         label = "Messages",
