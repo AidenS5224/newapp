@@ -28,5 +28,8 @@ data class FeedPost(
     val visibility: String = "public",
 
     @SerialName("created_at")
-    val createdAt: String
+    val createdAt: String,
+
+    @kotlinx.serialization.Transient
+    val resolvedMediaUrl: String? = null
 )

@@ -1,25 +1,42 @@
 package com.gamerconnect.testclient.feature.feed
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil3.compose.AsyncImage
 
 
 @Composable
@@ -85,13 +102,22 @@ fun FeedScreen(
             }
 
             else -> {
-                uiState.posts.forEach { post ->
-                    FeedPostCard(
-                        title = post.title,
-                        body = post.body,
-                        mediaUrl = post.mediaUrl,
-                        createdAt = post.createdAt
-                    )
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    items(
+                        items = uiState.posts,
+                        key = { post -> post.id }
+                    ) { post ->
+                        FeedPostCard(
+                            title = post.title,
+                            body = post.body,
+                            mediaUrl = post.resolvedMediaUrl,
+                            mediaType = post.mediaType,
+                            createdAt = post.createdAt
+                        )
+                    }
                 }
             }
         }
@@ -131,6 +157,7 @@ private fun FeedPostCard(
     title: String,
     body: String,
     mediaUrl: String?,
+    mediaType: String?,
     createdAt: String
 ) {
     Card(
@@ -164,24 +191,12 @@ private fun FeedPostCard(
             )
 
             if (!mediaUrl.isNullOrBlank()) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF111A2B)
-                    )
-                ) {
-                    Text(
-                        text = "Media attached",
-                        color = Color(0xFF9CA3AF),
-                        modifier = Modifier.padding(
-                            horizontal = 16.dp,
-                            vertical = 70.dp
-                        )
-                    )
-                }
+                FeedMedia(
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
+                    authorName = null,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
 
             Row(
@@ -205,4 +220,164 @@ private fun FeedPostCard(
             }
         }
     }
+}
+
+@Composable
+private fun FeedMedia(
+    mediaUrl: String,
+    mediaType: String?,
+    authorName: String?,
+    modifier: Modifier = Modifier
+) {
+    when (feedMediaKind(mediaType, mediaUrl)) {
+        FeedMediaKind.Image -> FeedMediaPreview(
+            mediaUrl = mediaUrl,
+            authorName = authorName,
+            modifier = modifier
+        )
+
+        FeedMediaKind.Video -> FeedMediaFallback(
+            text = "Video preview coming soon",
+            modifier = modifier
+        )
+
+        FeedMediaKind.Unknown -> FeedMediaFallback(
+            text = "Media unavailable",
+            modifier = modifier
+        )
+    }
+}
+
+@Composable
+private fun FeedMediaPreview(
+    mediaUrl: String,
+    authorName: String?,
+    modifier: Modifier = Modifier
+) {
+    var imageFailed by remember(mediaUrl) {
+        mutableStateOf(false)
+    }
+    var imageAspectRatio by remember(mediaUrl) {
+        mutableStateOf(16f / 9f)
+    }
+    val maxMediaHeight = LocalConfiguration.current.screenHeightDp.dp * 0.48f
+
+    BoxWithConstraints(
+        modifier = modifier.fillMaxWidth()
+    ) {
+        val previewHeight = (maxWidth / imageAspectRatio)
+            .coerceAtMost(maxMediaHeight)
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(previewHeight)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFF111A2B)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (imageFailed) {
+                Text(
+                    text = "Media unavailable",
+                    color = Color(0xFF9CA3AF),
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                AsyncImage(
+                    model = mediaUrl,
+                    contentDescription = authorName?.let { "$it feed post image" }
+                        ?: "Feed post image",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.FillWidth,
+                    onSuccess = { state ->
+                        val intrinsicSize = state.painter.intrinsicSize
+                        if (
+                            intrinsicSize.width.isFinite() &&
+                            intrinsicSize.height.isFinite() &&
+                            intrinsicSize.width > 0f &&
+                            intrinsicSize.height > 0f
+                        ) {
+                            imageAspectRatio =
+                                intrinsicSize.width / intrinsicSize.height
+                        }
+                    },
+                    onError = { state ->
+                        imageFailed = true
+                        Log.w(
+                            "FeedScreen",
+                            "Feed image failed to load.",
+                            state.result.throwable
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeedMediaFallback(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF111A2B)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = Color(0xFF9CA3AF),
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(16.dp)
+        )
+    }
+}
+
+private fun feedMediaKind(
+    mediaType: String?,
+    mediaUrl: String
+): FeedMediaKind {
+    val normalizedMediaType = mediaType
+        ?.trim()
+        ?.lowercase()
+
+    if (normalizedMediaType == "image" || normalizedMediaType?.startsWith("image/") == true) {
+        return FeedMediaKind.Image
+    }
+
+    if (normalizedMediaType == "video" || normalizedMediaType?.startsWith("video/") == true) {
+        return FeedMediaKind.Video
+    }
+
+    val path = mediaUrl
+        .substringBefore("?")
+        .substringBefore("#")
+        .lowercase()
+
+    return when {
+        path.endsWith(".jpg") ||
+            path.endsWith(".jpeg") ||
+            path.endsWith(".png") ||
+            path.endsWith(".webp") ||
+            path.endsWith(".gif") -> FeedMediaKind.Image
+
+        path.endsWith(".mp4") ||
+            path.endsWith(".webm") ||
+            path.endsWith(".mov") -> FeedMediaKind.Video
+
+        else -> FeedMediaKind.Unknown
+    }
+}
+
+private enum class FeedMediaKind {
+    Image,
+    Video,
+    Unknown
 }
