@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -321,36 +322,19 @@ private fun MessageBubble(
         }
     ) {
         Row(
+            modifier = Modifier.padding(start = 8.dp),
             verticalAlignment = Alignment.Bottom
         ) {
             if (!isCurrentUser) {
-                Box(
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (!senderAvatarUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = senderAvatarUrl,
-                            contentDescription = "$senderName avatar",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Text(
-                            text = senderName
-                                ?.trim()
-                                ?.firstOrNull()
-                                ?.uppercase()
-                                ?: "?",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
+                IncomingMessageAvatar(
+                    username = senderName,
+                    avatarUrl = senderAvatarUrl,
+                    modifier = Modifier.size(40.dp)
+                )
+
+                Spacer(
+                    modifier = Modifier.size(8.dp)
+                )
             }
 
             Column(
@@ -393,6 +377,53 @@ private fun MessageBubble(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun IncomingMessageAvatar(
+    username: String?,
+    avatarUrl: String?,
+    modifier: Modifier = Modifier
+) {
+    var imageFailed by remember(avatarUrl) {
+        mutableStateOf(false)
+    }
+    val shouldShowImage = !avatarUrl.isNullOrBlank() && !imageFailed
+
+    if (shouldShowImage) {
+        Box(
+            modifier = modifier
+                .clip(CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = avatarUrl,
+                contentDescription = "$username profile picture",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onError = {
+                    imageFailed = true
+                }
+            )
+        }
+    } else {
+        Box(
+            modifier = modifier
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = username
+                    ?.trim()
+                    ?.firstOrNull()
+                    ?.uppercase()
+                    ?: "?",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onPrimary
+            )
         }
     }
 }

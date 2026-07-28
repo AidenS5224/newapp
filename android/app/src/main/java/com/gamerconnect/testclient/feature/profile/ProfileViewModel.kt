@@ -15,6 +15,7 @@ data class ProfileUiState(
     val availableGames: List<String> = emptyList(),
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
+    val isUploadingAvatar: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -143,6 +144,88 @@ class ProfileViewModel(
     fun clearError() {
         _uiState.update {
             it.copy(errorMessage = null)
+        }
+    }
+
+    fun showError(
+        message: String
+    ) {
+        _uiState.update {
+            it.copy(errorMessage = message)
+        }
+    }
+
+    fun uploadAvatar(
+        bytes: ByteArray,
+        mimeType: String
+    ) {
+        if (_uiState.value.isUploadingAvatar) {
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isUploadingAvatar = true,
+                    errorMessage = null
+                )
+            }
+
+            runCatching {
+                repository.uploadCurrentAvatar(
+                    bytes = bytes,
+                    mimeType = mimeType
+                )
+            }.onSuccess { profile ->
+                _uiState.update {
+                    it.copy(
+                        profile = profile,
+                        isUploadingAvatar = false,
+                        errorMessage = null
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isUploadingAvatar = false,
+                        errorMessage = error.message ?: "Unable to upload avatar. Please try again."
+                    )
+                }
+            }
+        }
+    }
+
+    fun removeAvatar() {
+        if (_uiState.value.isUploadingAvatar) {
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isUploadingAvatar = true,
+                    errorMessage = null
+                )
+            }
+
+            runCatching {
+                repository.removeCurrentAvatar()
+            }.onSuccess { profile ->
+                _uiState.update {
+                    it.copy(
+                        profile = profile,
+                        isUploadingAvatar = false,
+                        errorMessage = null
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isUploadingAvatar = false,
+                        errorMessage = error.message ?: "Unable to remove avatar. Please try again."
+                    )
+                }
+            }
         }
     }
 
