@@ -8,6 +8,10 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
@@ -17,6 +21,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.gamerconnect.testclient.feature.discovery.DiscoveryScreen
+import com.gamerconnect.testclient.feature.feed.CreateFeedPostScreen
 import com.gamerconnect.testclient.feature.feed.FeedScreen
 import com.gamerconnect.testclient.feature.groups.GroupsScreen
 import com.gamerconnect.testclient.feature.groups.GroupDetailsScreen
@@ -37,6 +42,9 @@ fun GamerConnectApp(
     val destinations = AppDestination.bottomNavigationItems
     val currentBackStackEntry = navController.currentBackStackEntryAsState().value
     val currentRoute = currentBackStackEntry?.destination?.route
+    var feedRefreshKey by rememberSaveable {
+        mutableStateOf(0)
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -105,7 +113,24 @@ fun GamerConnectApp(
             }
 
             composable(AppDestination.Feed.route) {
-                FeedScreen()
+                FeedScreen(
+                    refreshKey = feedRefreshKey,
+                    onCreatePostClick = {
+                        navController.navigate(AppDestination.CreateFeedPost.route)
+                    }
+                )
+            }
+
+            composable(AppDestination.CreateFeedPost.route) {
+                CreateFeedPostScreen(
+                    onBack = {
+                        navController.popBackStack()
+                    },
+                    onPublished = {
+                        feedRefreshKey += 1
+                        navController.popBackStack()
+                    }
+                )
             }
 
             composable(AppDestination.Messages.route) {

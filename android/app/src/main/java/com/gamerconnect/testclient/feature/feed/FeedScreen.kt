@@ -19,9 +19,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,88 +48,119 @@ import coil3.compose.AsyncImage
 
 @Composable
 fun FeedScreen(
+    onCreatePostClick: () -> Unit = {},
+    refreshKey: Int = 0,
     modifier: Modifier = Modifier,
     feedViewModel: FeedViewModel = viewModel()
 ) {
     val uiState = feedViewModel.uiState.collectAsStateWithLifecycle().value
-    Column(
+
+    LaunchedEffect(refreshKey) {
+        if (refreshKey > 0) {
+            feedViewModel.loadPosts()
+        }
+    }
+
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        Text(
-            text = "Feed",
-            color = Color.White,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            FeedTab(
-                title = "For You",
-                selected = true
+            Text(
+                text = "Feed",
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold
             )
 
-            FeedTab(
-                title = "Following",
-                selected = false
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                FeedTab(
+                    title = "For You",
+                    selected = true
+                )
 
-            FeedTab(
-                title = "Groups",
-                selected = false
-            )
-        }
+                FeedTab(
+                    title = "Following",
+                    selected = false
+                )
 
-        when {
-            uiState.isLoading -> {
-                Text(
-                    text = "Loading feed...",
-                    color = Color.White
+                FeedTab(
+                    title = "Groups",
+                    selected = false
                 )
             }
 
-            uiState.errorMessage != null -> {
-                Text(
-                    text = uiState.errorMessage,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
+            when {
+                uiState.isLoading -> {
+                    Text(
+                        text = "Loading feed...",
+                        color = Color.White
+                    )
+                }
 
-            uiState.posts.isEmpty() -> {
-                Text(
-                    text = "No posts yet.",
-                    color = Color(0xFF9CA3AF)
-                )
-            }
+                uiState.errorMessage != null -> {
+                    Text(
+                        text = uiState.errorMessage,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
 
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    items(
-                        items = uiState.posts,
-                        key = { post -> post.id }
-                    ) { post ->
-                        FeedPostCard(
-                            title = post.title,
-                            body = post.body,
-                            authorDisplayName = post.authorDisplayName
-                                ?: "Unknown player",
-                            authorAvatarUrl = post.authorAvatarUrl,
-                            mediaUrl = post.resolvedMediaUrl,
-                            mediaType = post.mediaType,
-                            createdAt = post.createdAt
-                        )
+                uiState.posts.isEmpty() -> {
+                    Text(
+                        text = "No posts yet.",
+                        color = Color(0xFF9CA3AF)
+                    )
+                }
+
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        items(
+                            items = uiState.posts,
+                            key = { post -> post.id }
+                        ) { post ->
+                            FeedPostCard(
+                                title = post.title,
+                                body = post.body,
+                                authorDisplayName = post.authorDisplayName
+                                    ?: "Unknown player",
+                                authorAvatarUrl = post.authorAvatarUrl,
+                                mediaUrl = post.resolvedMediaUrl,
+                                mediaType = post.mediaType,
+                                createdAt = post.createdAt
+                            )
+                        }
                     }
                 }
             }
+        }
+
+        FloatingActionButton(
+            onClick = onCreatePostClick,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+                .semantics {
+                    contentDescription = "Create post"
+                },
+            containerColor = MaterialTheme.colorScheme.primary
+        ) {
+            Text(
+                text = "+",
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
