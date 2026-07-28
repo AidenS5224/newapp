@@ -15,7 +15,8 @@ import kotlinx.coroutines.launch
 data class FeedUiState(
     val posts: List<FeedPost> = emptyList(),
     val isLoading: Boolean = true,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val reactionErrorMessage: String? = null
 )
 
 data class CreateFeedPostUiState(
@@ -73,6 +74,84 @@ class FeedViewModel(
                     )
                 }
             }
+        }
+    }
+
+    fun toggleReaction(
+        postId: String
+    ) {
+        val currentPosts = _uiState.value.posts
+        val targetPost = currentPosts.firstOrNull { post ->
+            post.id == postId
+        } ?: return
+
+        if (targetPost.isReactionPending) {
+            return
+        }
+
+        val nextReactedState = !targetPost.isReactedByCurrentUser
+        val optimisticPosts = currentPosts.map { post ->
+            if (post.id == postId) {
+                post.copy(
+                    isReactedByCurrentUser = nextReactedState,
+                    reactionCount = if (nextReactedState) {
+                        post.reactionCount + 1
+                    } else {
+                        (post.reactionCount - 1).coerceAtLeast(0)
+                    },
+                    isReactionPending = true
+                )
+            } else {
+                post
+            }
+        }
+
+        _uiState.update {
+            it.copy(
+                posts = optimisticPosts,
+                reactionErrorMessage = null
+            )
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                if (nextReactedState) {
+                    repository.addReaction(postId)
+                } else {
+                    repository.removeReaction(postId)
+                }
+            }.onSuccess {
+                _uiState.update { state ->
+                    state.copy(
+                        posts = state.posts.map { post ->
+                            if (post.id == postId) {
+                                post.copy(isReactionPending = false)
+                            } else {
+                                post
+                            }
+                        }
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update { state ->
+                    state.copy(
+                        posts = state.posts.map { post ->
+                            if (post.id == postId) {
+                                targetPost.copy(isReactionPending = false)
+                            } else {
+                                post
+                            }
+                        },
+                        reactionErrorMessage = friendlyReactionError(error)
+                    )
+                }
+            }
+        }
+    }
+
+    fun consumeReactionError() {
+        _uiState.update {
+            it.copy(reactionErrorMessage = null)
         }
     }
 
@@ -234,6 +313,17 @@ class FeedViewModel(
             "add some text" in message -> "Add some text or an image before posting."
             "network" in message -> "Network problem. Check your connection and try again."
             else -> "Unable to publish your post. Please try again."
+        }
+    }
+
+    private fun friendlyReactionError(
+        error: Throwable
+    ): String {
+        val message = error.message.orEmpty().lowercase()
+
+        return when {
+            "sign in" in message -> "Sign in to react to posts."
+            else -> "Couldn't update reaction. Try again."
         }
     }
 }

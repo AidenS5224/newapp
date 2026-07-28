@@ -37,5 +37,14 @@ data class FeedPost(
     val authorDisplayName: String? = null,
 
     @kotlinx.serialization.Transient
-    val authorAvatarUrl: String? = null
+    val authorAvatarUrl: String? = null,
+
+    @kotlinx.serialization.Transient
+    val reactionCount: Int = 0,
+
+    @kotlinx.serialization.Transient
+    val isReactedByCurrentUser: Boolean = false,
+
+    @kotlinx.serialization.Transient
+    val isReactionPending: Boolean = false
 )
