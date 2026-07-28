@@ -22,6 +22,10 @@ data class FriendshipState(
     val status: FriendshipStatus = FriendshipStatus.NONE
 )
 
+data class PlayerSafetyState(
+    val isBlockedByCurrentUser: Boolean = false
+)
+
 @Serializable
 private data class ConnectionRow(
     val id: String,
@@ -175,6 +179,81 @@ class ProfileRepository {
             function = "remove_friendship",
             parameters = buildJsonObject {
                 put("target_profile_id", profileId)
+            }
+        )
+    }
+
+    suspend fun getSafetyState(
+        profileId: String
+    ): PlayerSafetyState {
+        val currentUserId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+
+        if (profileId.isBlank() || profileId == currentUserId) {
+            return PlayerSafetyState()
+        }
+
+        val isBlockedByCurrentUser = client.postgrest.rpc(
+            function = "has_blocked_profile",
+            parameters = buildJsonObject {
+                put("target_profile_id", profileId)
+            }
+        ).decodeAs<Boolean>()
+
+        return PlayerSafetyState(
+            isBlockedByCurrentUser = isBlockedByCurrentUser
+        )
+    }
+
+    suspend fun blockPlayer(
+        profileId: String
+    ) {
+        require(profileId.isNotBlank()) {
+            "Player profile ID is required."
+        }
+
+        client.postgrest.rpc(
+            function = "block_profile",
+            parameters = buildJsonObject {
+                put("target_profile_id", profileId)
+            }
+        )
+    }
+
+    suspend fun unblockPlayer(
+        profileId: String
+    ) {
+        require(profileId.isNotBlank()) {
+            "Player profile ID is required."
+        }
+
+        client.postgrest.rpc(
+            function = "unblock_profile",
+            parameters = buildJsonObject {
+                put("target_profile_id", profileId)
+            }
+        )
+    }
+
+    suspend fun reportPlayer(
+        profileId: String,
+        reason: String,
+        description: String
+    ) {
+        require(profileId.isNotBlank()) {
+            "Player profile ID is required."
+        }
+
+        require(reason.isNotBlank()) {
+            "Choose a report reason."
+        }
+
+        client.postgrest.rpc(
+            function = "report_profile",
+            parameters = buildJsonObject {
+                put("target_profile_id", profileId)
+                put("report_reason", reason)
+                put("report_description", description)
             }
         )
     }
