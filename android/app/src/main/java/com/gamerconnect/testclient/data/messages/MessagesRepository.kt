@@ -564,8 +564,8 @@ class MessagesRepository {
                 .decodeList<MessageSenderProfile>()
         }
 
-        val profileNameById = otherProfiles.associate {
-            it.id to it.displayName
+        val profileById = otherProfiles.associateBy { profile ->
+            profile.id
         }
 
         val otherParticipantByConversation = allParticipantRows
@@ -622,22 +622,27 @@ class MessagesRepository {
                     Instant.parse(message.createdAt)
                 }
 
+                val otherParticipant =
+                    otherParticipantByConversation[conversation.id]
+
+                val otherProfile = otherParticipant?.let { participant ->
+                    profileById[participant.profileId]
+                }
+
                 val displayTitle =
                     if (conversation.conversationType == "direct") {
-                        val otherParticipant =
-                            otherParticipantByConversation[conversation.id]
-
-                        otherParticipant
-                            ?.let { participant ->
-                                profileNameById[participant.profileId]
-                            }
-                            ?: conversation.title
+                        otherProfile?.displayName ?: conversation.title
                     } else {
                         conversation.title
                     }
 
                 conversation.copy(
                     title = displayTitle,
+                    avatarUrl = if (conversation.conversationType == "direct") {
+                        otherProfile?.avatarUrl
+                    } else {
+                        null
+                    },
                     unreadCount = unreadCount,
                     latestMessage = latestMessage?.body,
                     latestMessageAt = latestMessage?.createdAt

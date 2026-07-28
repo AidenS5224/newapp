@@ -2,11 +2,13 @@ package com.gamerconnect.testclient.feature.messages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -14,14 +16,21 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil3.compose.AsyncImage
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -136,6 +145,7 @@ fun MessagesScreen(
                     ) { conversation ->
                         ConversationCard(
                             name = conversation.title,
+                            avatarUrl = conversation.avatarUrl,
                             preview = conversation.latestMessage
                                 ?: if (conversation.conversationType == "group") {
                                     "LFG group chat"
@@ -240,6 +250,7 @@ private fun MessageFilterChip(
 @Composable
 private fun ConversationCard(
     name: String,
+    avatarUrl: String?,
     preview: String,
     time: String,
     unreadCount: Int,
@@ -260,19 +271,10 @@ private fun ConversationCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Card(
-                shape = CircleShape,
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF25104B)
-                )
-            ) {
-                Text(
-                    text = name.first().toString(),
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(16.dp)
-                )
-            }
+            ConversationAvatar(
+                name = name,
+                avatarUrl = avatarUrl
+            )
 
             Column(
                 modifier = Modifier.weight(1f),
@@ -321,6 +323,46 @@ private fun ConversationCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ConversationAvatar(
+    name: String,
+    avatarUrl: String?
+) {
+    var imageFailed by remember(avatarUrl) {
+        mutableStateOf(false)
+    }
+
+    Box(
+        modifier = Modifier
+            .size(52.dp)
+            .clip(CircleShape)
+            .background(Color(0xFF25104B)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (!avatarUrl.isNullOrBlank() && !imageFailed) {
+            AsyncImage(
+                model = avatarUrl,
+                contentDescription = "$name profile picture",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onError = {
+                    imageFailed = true
+                }
+            )
+        } else {
+            Text(
+                text = name
+                    .trim()
+                    .firstOrNull()
+                    ?.uppercase()
+                    ?: "?",
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

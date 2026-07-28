@@ -1,5 +1,12 @@
 package com.gamerconnect.testclient.feature.profile
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import java.io.ByteArrayOutputStream
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -7,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,12 +38,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil3.compose.AsyncImage
 import com.gamerconnect.testclient.data.profile.UserProfile
 
 @Composable
@@ -46,8 +58,34 @@ fun ProfileScreen(
     profileViewModel: ProfileViewModel = viewModel()
 ) {
     val uiState = profileViewModel.uiState.collectAsStateWithLifecycle().value
+    val context = LocalContext.current
     var isEditing by rememberSaveable {
         mutableStateOf(false)
+    }
+    var avatarPreviewUri by rememberSaveable {
+        mutableStateOf<String?>(null)
+    }
+    val avatarPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                readValidatedAvatar(
+                    context = context,
+                    uri = uri
+                )
+            }.onSuccess { avatar ->
+                avatarPreviewUri = uri.toString()
+                profileViewModel.uploadAvatar(
+                    bytes = avatar.bytes,
+                    mimeType = avatar.mimeType
+                )
+            }.onFailure { error ->
+                profileViewModel.showError(
+                    error.message ?: "Choose a supported image under 5 MB."
+                )
+            }
+        }
     }
 
     when {
@@ -100,9 +138,25 @@ fun ProfileScreen(
                         profile = profile,
                         availableGames = uiState.availableGames,
                         isSaving = uiState.isSaving,
+                        isUploadingAvatar = uiState.isUploadingAvatar,
+                        avatarPreviewUri = avatarPreviewUri,
                         errorMessage = uiState.errorMessage,
+                        onChooseAvatar = {
+                            avatarPicker.launch(
+                                arrayOf(
+                                    "image/jpeg",
+                                    "image/png",
+                                    "image/webp"
+                                )
+                            )
+                        },
+                        onRemoveAvatar = {
+                            avatarPreviewUri = null
+                            profileViewModel.removeAvatar()
+                        },
                         onCancel = {
                             profileViewModel.clearError()
+                            avatarPreviewUri = null
                             isEditing = false
                         },
                         onSave = { displayName, region, platforms, games, bio ->
@@ -212,15 +266,10 @@ private fun ProfileHeader(
                     containerColor = Color(0xFF25104B)
                 )
             ) {
-                Text(
-                    text = profile.displayName
-                        .firstOrNull()
-                        ?.uppercase()
-                        ?: "G",
-                    color = Color.White,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(24.dp)
+                ProfileAvatarPreview(
+                    displayName = profile.displayName,
+                    avatarUrl = profile.avatarUrl,
+                    previewUri = null
                 )
             }
 
@@ -281,7 +330,11 @@ private fun ProfileEditForm(
     profile: UserProfile,
     availableGames: List<String>,
     isSaving: Boolean,
+    isUploadingAvatar: Boolean,
+    avatarPreviewUri: String?,
     errorMessage: String?,
+    onChooseAvatar: () -> Unit,
+    onRemoveAvatar: () -> Unit,
     onCancel: () -> Unit,
     onSave: (
         displayName: String,
@@ -341,6 +394,14 @@ private fun ProfileEditForm(
                 text = "Update the public details other players see.",
                 color = Color(0xFF9CA3AF),
                 fontSize = 14.sp
+            )
+
+            AvatarEditor(
+                profile = profile,
+                previewUri = avatarPreviewUri,
+                isUploadingAvatar = isUploadingAvatar,
+                onChooseAvatar = onChooseAvatar,
+                onRemoveAvatar = onRemoveAvatar
             )
 
             if (errorMessage != null) {
@@ -464,6 +525,107 @@ private fun ProfileEditForm(
 }
 
 @Composable
+private fun AvatarEditor(
+    profile: UserProfile,
+    previewUri: String?,
+    isUploadingAvatar: Boolean,
+    onChooseAvatar: () -> Unit,
+    onRemoveAvatar: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF111C2E)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            ProfileAvatarPreview(
+                displayName = profile.displayName,
+                avatarUrl = profile.avatarUrl,
+                previewUri = previewUri
+            )
+
+            Text(
+                text = if (isUploadingAvatar) {
+                    "Uploading avatar..."
+                } else {
+                    "JPG, PNG or WebP up to 5 MB."
+                },
+                color = Color(0xFF9CA3AF),
+                fontSize = 12.sp
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick = onChooseAvatar,
+                    enabled = !isUploadingAvatar,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Choose Image",
+                        color = Color.White
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onRemoveAvatar,
+                    enabled = !isUploadingAvatar && (!profile.avatarUrl.isNullOrBlank() || previewUri != null),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Remove",
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileAvatarPreview(
+    displayName: String,
+    avatarUrl: String?,
+    previewUri: String?
+) {
+    val model = previewUri ?: avatarUrl
+
+    if (!model.isNullOrBlank()) {
+        AsyncImage(
+            model = model,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(84.dp)
+                .padding(2.dp)
+                .clip(CircleShape)
+        )
+    } else {
+        Text(
+            text = displayName
+                .firstOrNull()
+                ?.uppercase()
+                ?: "G",
+            color = Color.White,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(24.dp)
+        )
+    }
+}
+
+@Composable
 private fun ProfileTextField(
     value: String,
     onValueChange: (String) -> Unit,
@@ -497,6 +659,89 @@ private fun ProfileTextField(
         }
     }
 }
+
+private data class ValidatedAvatar(
+    val bytes: ByteArray,
+    val mimeType: String
+)
+
+private fun readValidatedAvatar(
+    context: Context,
+    uri: Uri
+): ValidatedAvatar {
+    val mimeType = context.contentResolver.getType(uri)
+        ?: error("Choose a supported image file.")
+    val allowedTypes = setOf(
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+    )
+
+    require(mimeType in allowedTypes) {
+        "Choose a JPG, PNG or WebP image."
+    }
+
+    val bytes = context.contentResolver.openInputStream(uri)?.use {
+        it.readBytes()
+    } ?: error("Unable to read the selected image.")
+
+    require(bytes.size <= MAX_AVATAR_BYTES) {
+        "Choose an image smaller than 5 MB."
+    }
+
+    return ValidatedAvatar(
+        bytes = createSquareAvatarBytes(bytes),
+        mimeType = "image/jpeg"
+    )
+}
+
+private fun createSquareAvatarBytes(
+    bytes: ByteArray
+): ByteArray {
+    val source = BitmapFactory.decodeByteArray(
+        bytes,
+        0,
+        bytes.size
+    ) ?: error("Unable to read the selected image.")
+    val side = minOf(
+        source.width,
+        source.height
+    )
+    val cropX = (source.width - side) / 2
+    val cropY = (source.height - side) / 2
+    val square = Bitmap.createBitmap(
+        source,
+        cropX,
+        cropY,
+        side,
+        side
+    )
+    val scaled = Bitmap.createScaledBitmap(
+        square,
+        AVATAR_IMAGE_SIZE,
+        AVATAR_IMAGE_SIZE,
+        true
+    )
+    val output = ByteArrayOutputStream()
+
+    scaled.compress(
+        Bitmap.CompressFormat.JPEG,
+        AVATAR_JPEG_QUALITY,
+        output
+    )
+
+    if (square != source) {
+        square.recycle()
+    }
+    scaled.recycle()
+    source.recycle()
+
+    return output.toByteArray()
+}
+
+private const val MAX_AVATAR_BYTES = 5 * 1024 * 1024
+private const val AVATAR_IMAGE_SIZE = 512
+private const val AVATAR_JPEG_QUALITY = 90
 
 @Composable
 private fun PlatformMultiSelect(

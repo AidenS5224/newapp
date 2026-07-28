@@ -5,6 +5,9 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.storage.storage
+import io.github.jan.supabase.storage.upload
+import io.ktor.http.ContentType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
@@ -53,6 +56,12 @@ private data class UpdateProfileRequest(
     val topGames: List<String>,
 
     val bio: String
+)
+
+@Serializable
+private data class UpdateAvatarRequest(
+    @SerialName("avatar_url")
+    val avatarUrl: String?
 )
 
 @Serializable
@@ -115,6 +124,41 @@ class ProfileRepository {
             }
 
         return getCurrentProfile()
+    }
+
+    suspend fun uploadCurrentAvatar(
+        bytes: ByteArray,
+        mimeType: String
+    ): UserProfile {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+        val objectPath = "$userId/avatar"
+        val bucket = client.storage.from(PROFILE_AVATARS_BUCKET)
+
+        bucket.upload(
+            path = objectPath,
+            data = bytes
+        ) {
+            upsert = true
+            contentType = ContentType.parse(mimeType)
+        }
+
+        val publicUrl = "${bucket.publicUrl(objectPath)}?v=${System.currentTimeMillis()}"
+        return updateCurrentAvatarUrl(publicUrl)
+    }
+
+    suspend fun removeCurrentAvatar(): UserProfile {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+        val objectPath = "$userId/avatar"
+
+        runCatching {
+            client.storage
+                .from(PROFILE_AVATARS_BUCKET)
+                .delete(listOf(objectPath))
+        }
+
+        return updateCurrentAvatarUrl(null)
     }
 
     suspend fun getAvailableGameNames(): List<String> {
@@ -339,6 +383,31 @@ class ProfileRepository {
                 put("response_status", responseStatus)
             }
         )
+    }
+
+    private suspend fun updateCurrentAvatarUrl(
+        avatarUrl: String?
+    ): UserProfile {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+
+        client
+            .from("profiles")
+            .update(
+                UpdateAvatarRequest(
+                    avatarUrl = avatarUrl
+                )
+            ) {
+                filter {
+                    eq("id", userId)
+                }
+            }
+
+        return getCurrentProfile()
+    }
+
+    private companion object {
+        const val PROFILE_AVATARS_BUCKET = "profile-avatars"
     }
 }
 

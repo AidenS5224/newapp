@@ -24,8 +24,10 @@ data class Conversation(
     val latestMessage: String? = null,
 
     @kotlinx.serialization.Transient
-    val latestMessageAt: String? = null
+    val latestMessageAt: String? = null,
 
+    @kotlinx.serialization.Transient
+    val avatarUrl: String? = null
 
 
 )
