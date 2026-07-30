@@ -22,8 +22,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.gamerconnect.testclient.feature.discovery.DiscoveryScreen
 import com.gamerconnect.testclient.feature.feed.CreateFeedPostScreen
+import com.gamerconnect.testclient.feature.feed.EditFeedPostScreen
 import com.gamerconnect.testclient.feature.feed.FeedCommentsScreen
 import com.gamerconnect.testclient.feature.feed.FeedScreen
+import com.gamerconnect.testclient.feature.feed.FeedViewModel
 import com.gamerconnect.testclient.feature.groups.GroupsScreen
 import com.gamerconnect.testclient.feature.groups.GroupDetailsScreen
 import com.gamerconnect.testclient.feature.messages.MessagesScreen
@@ -33,6 +35,7 @@ import com.gamerconnect.testclient.navigation.AppDestination
 import android.net.Uri
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gamerconnect.testclient.feature.messages.ChatScreen
 
 @Composable
@@ -46,6 +49,7 @@ fun GamerConnectApp(
     var feedRefreshKey by rememberSaveable {
         mutableStateOf(0)
     }
+    val feedViewModel: FeedViewModel = viewModel()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -116,6 +120,7 @@ fun GamerConnectApp(
             composable(AppDestination.Feed.route) {
                 FeedScreen(
                     refreshKey = feedRefreshKey,
+                    feedViewModel = feedViewModel,
                     onCreatePostClick = {
                         navController.navigate(AppDestination.CreateFeedPost.route)
                     },
@@ -125,17 +130,50 @@ fun GamerConnectApp(
                                 Uri.encode(postId)
                             )
                         )
+                    },
+                    onEditPostClick = { postId ->
+                        navController.navigate(
+                            AppDestination.EditFeedPost.createRoute(
+                                Uri.encode(postId)
+                            )
+                        )
                     }
                 )
             }
 
             composable(AppDestination.CreateFeedPost.route) {
                 CreateFeedPostScreen(
+                    feedViewModel = feedViewModel,
                     onBack = {
                         navController.popBackStack()
                     },
                     onPublished = {
                         feedRefreshKey += 1
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+            composable(
+                route = AppDestination.EditFeedPost.route,
+                arguments = listOf(
+                    navArgument("postId") {
+                        type = NavType.StringType
+                    }
+                )
+            ) { backStackEntry ->
+                val postId = Uri.decode(
+                    backStackEntry.arguments?.getString("postId")
+                        ?: return@composable
+                )
+
+                EditFeedPostScreen(
+                    postId = postId,
+                    onBack = {
+                        navController.popBackStack()
+                    },
+                    onSaved = { updatedPost ->
+                        feedViewModel.applyUpdatedPost(updatedPost)
                         navController.popBackStack()
                     }
                 )

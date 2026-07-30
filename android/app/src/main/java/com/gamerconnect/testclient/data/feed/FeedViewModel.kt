@@ -42,7 +42,12 @@ data class FeedUiState(
     val tabStates: Map<FeedTab, FeedTabState> = FeedTab.entries.associateWith {
         FeedTabState()
     },
-    val reactionErrorMessage: String? = null
+    val currentProfileId: String? = null,
+    val postPendingDeletion: FeedPost? = null,
+    val isDeletingPost: Boolean = false,
+    val reactionErrorMessage: String? = null,
+    val managementMessage: String? = null,
+    val deletedPostId: String? = null
 ) {
     val currentTabState: FeedTabState
         get() = tabStates[selectedTab] ?: FeedTabState()
@@ -72,8 +77,15 @@ class FeedViewModel(
         _createPostUiState.asStateFlow()
 
     init {
+        refreshCurrentProfileId()
         loadPosts(FeedTab.DISCOVER)
         loadAvailableGames()
+    }
+
+    fun refreshCurrentProfileId() {
+        _uiState.update {
+            it.copy(currentProfileId = repository.getCurrentProfileId())
+        }
     }
 
     fun selectTab(
@@ -198,6 +210,93 @@ class FeedViewModel(
     fun consumeReactionError() {
         _uiState.update {
             it.copy(reactionErrorMessage = null)
+        }
+    }
+
+    fun requestDeletePost(
+        post: FeedPost
+    ) {
+        _uiState.update {
+            it.copy(
+                postPendingDeletion = post,
+                managementMessage = null
+            )
+        }
+    }
+
+    fun cancelDeletePost() {
+        if (_uiState.value.isDeletingPost) {
+            return
+        }
+
+        _uiState.update {
+            it.copy(postPendingDeletion = null)
+        }
+    }
+
+    fun confirmDeletePost() {
+        val post = _uiState.value.postPendingDeletion ?: return
+        if (_uiState.value.isDeletingPost) {
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isDeletingPost = true,
+                    managementMessage = null
+                )
+            }
+
+            repository.deleteFeedPost(post.id)
+                .onSuccess {
+                    _uiState.update { state ->
+                        state.copy(
+                            tabStates = state.removePostFromAllTabs(post.id),
+                            postPendingDeletion = null,
+                            isDeletingPost = false,
+                            managementMessage = "Post deleted.",
+                            deletedPostId = post.id
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isDeletingPost = false,
+                            managementMessage = friendlyManagementError(
+                                error = error,
+                                fallback = "Couldn't delete post. Try again."
+                            )
+                        )
+                    }
+                }
+        }
+    }
+
+    fun applyUpdatedPost(
+        post: FeedPost
+    ) {
+        _uiState.update {
+            it.copy(
+                tabStates = it.updatePostInAllTabs(
+                    postId = post.id,
+                    replacement = post
+                ),
+                managementMessage = "Post updated."
+            )
+        }
+    }
+
+    fun consumeManagementMessage() {
+        _uiState.update {
+            it.copy(managementMessage = null)
+        }
+    }
+
+    fun consumeDeletedPostEvent() {
+        _uiState.update {
+            it.copy(deletedPostId = null)
         }
     }
 
@@ -391,6 +490,22 @@ class FeedViewModel(
             FeedTab.FRIENDS -> "Couldn't load posts from friends."
         }
     }
+
+    private fun friendlyManagementError(
+        error: Throwable,
+        fallback: String
+    ): String {
+        val message = error.message.orEmpty().lowercase()
+
+        return when {
+            "sign in" in message -> "Sign in to manage posts."
+            "own" in message -> "You can only manage your own posts."
+            "no longer" in message || "not found" in message -> "This post is no longer available."
+            "add some text" in message -> "Add some text before saving."
+            "network" in message -> "Network problem. Check your connection and try again."
+            else -> fallback
+        }
+    }
 }
 
 private fun FeedUiState.updateTab(
@@ -426,6 +541,18 @@ private fun FeedUiState.updatePostInAllTabs(
                 } else {
                     post
                 }
+            }
+        )
+    }
+}
+
+private fun FeedUiState.removePostFromAllTabs(
+    postId: String
+): Map<FeedTab, FeedTabState> {
+    return tabStates.mapValues { (_, tabState) ->
+        tabState.copy(
+            posts = tabState.posts.filterNot { post ->
+                post.id == postId
             }
         )
     }

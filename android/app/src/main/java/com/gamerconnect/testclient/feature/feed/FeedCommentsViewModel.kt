@@ -50,11 +50,11 @@ class FeedCommentsViewModel(
                         isLoading = false
                     )
                 }
-            }.onFailure {
+            }.onFailure { error ->
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        loadError = "Couldn't load comments. Try again."
+                        loadError = friendlyLoadError(error)
                     )
                 }
             }
@@ -133,6 +133,17 @@ class FeedCommentsViewModel(
     fun consumeMessage() {
         _uiState.update {
             it.copy(message = null)
+        }
+    }
+
+    private fun friendlyLoadError(
+        error: Throwable
+    ): String {
+        val message = error.message.orEmpty().lowercase()
+
+        return when {
+            "no longer" in message || "not found" in message -> "This post is no longer available."
+            else -> "Couldn't load comments. Try again."
         }
     }
 

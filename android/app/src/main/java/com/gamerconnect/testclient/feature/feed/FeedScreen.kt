@@ -22,6 +22,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +66,7 @@ import androidx.media3.ui.PlayerView
 fun FeedScreen(
     onCreatePostClick: () -> Unit = {},
     onCommentsClick: (String) -> Unit = {},
+    onEditPostClick: (String) -> Unit = {},
     refreshKey: Int = 0,
     modifier: Modifier = Modifier,
     feedViewModel: FeedViewModel = viewModel()
@@ -92,6 +98,26 @@ fun FeedScreen(
                 Toast.LENGTH_SHORT
             ).show()
             feedViewModel.consumeReactionError()
+        }
+    }
+
+    LaunchedEffect(uiState.managementMessage) {
+        uiState.managementMessage?.let { message ->
+            Toast.makeText(
+                context,
+                message,
+                Toast.LENGTH_SHORT
+            ).show()
+            feedViewModel.consumeManagementMessage()
+        }
+    }
+
+    LaunchedEffect(uiState.deletedPostId) {
+        uiState.deletedPostId?.let { deletedPostId ->
+            if (playingPostId == deletedPostId) {
+                playingPostId = null
+            }
+            feedViewModel.consumeDeletedPostEvent()
         }
     }
 
@@ -181,12 +207,27 @@ fun FeedScreen(
                                 commentCount = post.commentCount,
                                 onCommentsClick = {
                                     onCommentsClick(post.id)
+                                },
+                                isOwnPost = uiState.currentProfileId == post.profileId,
+                                onEditPost = {
+                                    onEditPostClick(post.id)
+                                },
+                                onDeletePost = {
+                                    feedViewModel.requestDeletePost(post)
                                 }
                             )
                         }
                     }
                 }
             }
+        }
+
+        uiState.postPendingDeletion?.let { post ->
+            DeletePostConfirmationDialog(
+                isDeleting = uiState.isDeletingPost,
+                onConfirm = feedViewModel::confirmDeletePost,
+                onDismiss = feedViewModel::cancelDeletePost
+            )
         }
 
         FloatingActionButton(
@@ -207,6 +248,55 @@ fun FeedScreen(
             )
         }
     }
+}
+
+@Composable
+private fun DeletePostConfirmationDialog(
+    isDeleting: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = {
+            if (!isDeleting) {
+                onDismiss()
+            }
+        },
+        title = {
+            Text("Delete post?")
+        },
+        text = {
+            Text("This post and its comments will be permanently deleted.")
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = !isDeleting,
+                modifier = Modifier.semantics {
+                    contentDescription = "Confirm deletion"
+                }
+            ) {
+                if (isDeleting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp)
+                    )
+                } else {
+                    Text("Delete")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isDeleting,
+                modifier = Modifier.semantics {
+                    contentDescription = "Cancel deletion"
+                }
+            ) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -254,7 +344,10 @@ private fun FeedPostCard(
     isReactionPending: Boolean,
     onReactionClick: () -> Unit,
     commentCount: Int,
-    onCommentsClick: () -> Unit
+    onCommentsClick: () -> Unit,
+    isOwnPost: Boolean,
+    onEditPost: () -> Unit,
+    onDeletePost: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -270,7 +363,10 @@ private fun FeedPostCard(
             FeedAuthorHeader(
                 displayName = authorDisplayName,
                 avatarUrl = authorAvatarUrl,
-                timestamp = createdAt
+                timestamp = createdAt,
+                isOwnPost = isOwnPost,
+                onEditPost = onEditPost,
+                onDeletePost = onDeletePost
             )
 
             Text(
@@ -380,6 +476,9 @@ private fun FeedAuthorHeader(
     displayName: String,
     avatarUrl: String?,
     timestamp: String,
+    isOwnPost: Boolean,
+    onEditPost: () -> Unit,
+    onDeletePost: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -411,6 +510,73 @@ private fun FeedAuthorHeader(
                 fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        if (isOwnPost) {
+            PostOptionsMenu(
+                onEditPost = onEditPost,
+                onDeletePost = onDeletePost
+            )
+        }
+    }
+}
+
+@Composable
+private fun PostOptionsMenu(
+    onEditPost: () -> Unit,
+    onDeletePost: () -> Unit
+) {
+    var expanded by remember {
+        mutableStateOf(false)
+    }
+
+    Box {
+        IconButton(
+            onClick = {
+                expanded = true
+            },
+            modifier = Modifier.semantics {
+                contentDescription = "Post options"
+            }
+        ) {
+            Text(
+                text = "...",
+                color = Color(0xFFB8BFCC),
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = {
+                expanded = false
+            }
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Text("Edit post")
+                },
+                onClick = {
+                    expanded = false
+                    onEditPost()
+                },
+                modifier = Modifier.semantics {
+                    contentDescription = "Edit post"
+                }
+            )
+
+            DropdownMenuItem(
+                text = {
+                    Text("Delete post")
+                },
+                onClick = {
+                    expanded = false
+                    onDeletePost()
+                },
+                modifier = Modifier.semantics {
+                    contentDescription = "Delete post"
+                }
             )
         }
     }
