@@ -94,6 +94,11 @@ private data class CreateFeedPostRequest(
 )
 
 @Serializable
+private data class UpdateFeedPostRequest(
+    val body: String
+)
+
+@Serializable
 data class FeedGame(
     val id: String,
     val name: String
@@ -114,6 +119,10 @@ data class FeedImageUpload(
 class FeedRepository {
 
     private val client = SupabaseProvider.client
+
+    fun getCurrentProfileId(): String? {
+        return client.auth.currentUserOrNull()?.id
+    }
 
     suspend fun getFeedPosts(
         filter: FeedFilter = FeedFilter.DISCOVER
@@ -164,9 +173,92 @@ class FeedRepository {
                     eq("id", postId)
                 }
             }
-            .decodeSingle<FeedPost>()
+            .decodeList<FeedPost>()
+            .firstOrNull()
+            ?: error("This post is no longer available.")
 
         return enrichPosts(listOf(post)).first()
+    }
+
+    suspend fun getOwnedFeedPost(
+        postId: String
+    ): FeedPost {
+        val userId = requireCurrentProfileId()
+        return getOwnedFeedPostRow(
+            postId = postId,
+            userId = userId
+        ) ?: error("You can only manage your own posts.")
+    }
+
+    suspend fun updateFeedPost(
+        postId: String,
+        body: String
+    ): Result<FeedPost> {
+        return runCatching {
+            require(postId.isNotBlank()) {
+                "Post ID is required."
+            }
+
+            val userId = requireCurrentProfileId()
+            val ownedPost = getOwnedFeedPostRow(
+                postId = postId,
+                userId = userId
+            ) ?: error("You can only manage your own posts.")
+            val trimmedBody = body.trim()
+
+            require(trimmedBody.isNotBlank() || !ownedPost.mediaUrl.isNullOrBlank()) {
+                "Add some text before saving."
+            }
+
+            client
+                .from("feed_posts")
+                .update(
+                    UpdateFeedPostRequest(
+                        body = trimmedBody
+                    )
+                ) {
+                    filter {
+                        eq("id", postId)
+                        eq("profile_id", userId)
+                    }
+                }
+
+            getFeedPost(postId)
+        }
+    }
+
+    suspend fun deleteFeedPost(
+        postId: String
+    ): Result<Unit> {
+        return runCatching {
+            require(postId.isNotBlank()) {
+                "Post ID is required."
+            }
+
+            val userId = requireCurrentProfileId()
+            getOwnedFeedPostRow(
+                postId = postId,
+                userId = userId
+            ) ?: error("You can only manage your own posts.")
+
+            client
+                .from("feed_posts")
+                .delete {
+                    filter {
+                        eq("id", postId)
+                        eq("profile_id", userId)
+                    }
+                }
+
+            val stillExists = getOwnedFeedPostRow(
+                postId = postId,
+                userId = userId
+            ) != null
+
+            check(!stillExists) {
+                "Couldn't delete post. Try again."
+            }
+        }
     }
 
     suspend fun addReaction(
@@ -400,6 +492,27 @@ class FeedRepository {
         return profileGames.mapNotNull { gameName ->
             gameByName[gameName.lowercase()]
         }
+    }
+
+    private fun requireCurrentProfileId(): String {
+        return client.auth.currentUserOrNull()?.id
+            ?: error("Sign in to manage posts.")
+    }
+
+    private suspend fun getOwnedFeedPostRow(
+        postId: String,
+        userId: String
+    ): FeedPost? {
+        return client
+            .from("feed_posts")
+            .select {
+                filter {
+                    eq("id", postId)
+                    eq("profile_id", userId)
+                }
+            }
+            .decodeList<FeedPost>()
+            .firstOrNull()
     }
 
     private suspend fun getAuthorProfiles(

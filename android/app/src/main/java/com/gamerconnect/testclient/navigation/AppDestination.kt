@@ -41,6 +41,18 @@ sealed class AppDestination(
         }
     }
 
+    data object EditFeedPost : AppDestination(
+        route = "feed/edit/{postId}",
+        label = "Edit post",
+        symbol = ""
+    ) {
+        fun createRoute(
+            postId: String
+        ): String {
+            return "feed/edit/$postId"
+        }
+    }
+
     data object Messages : AppDestination(
         route = "messages",
         label = "Messages",
