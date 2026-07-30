@@ -35,6 +35,17 @@ private data class FeedReactionRow(
 )
 
 @Serializable
+private data class FeedConnectionRow(
+    @SerialName("from_profile_id")
+    val fromProfileId: String,
+
+    @SerialName("to_profile_id")
+    val toProfileId: String,
+
+    val status: String
+)
+
+@Serializable
 private data class CreateFeedReactionRequest(
     @SerialName("post_id")
     val postId: String,
@@ -104,11 +115,30 @@ class FeedRepository {
 
     private val client = SupabaseProvider.client
 
-    suspend fun getFeedPosts(): List<FeedPost> {
-        val currentUserId = client.auth.currentUserOrNull()?.id
-        val posts = client
+    suspend fun getFeedPosts(
+        filter: FeedFilter = FeedFilter.DISCOVER
+    ): List<FeedPost> {
+        val friendProfileIds = when (filter) {
+            FeedFilter.DISCOVER -> emptyList()
+            FeedFilter.FRIENDS -> getAcceptedFriendProfileIds()
+        }
+
+        val postsQuery = client
             .from("feed_posts")
             .select {
+                filter {
+                    when (filter) {
+                        FeedFilter.DISCOVER -> Unit
+                        FeedFilter.FRIENDS -> {
+                            if (friendProfileIds.isEmpty()) {
+                                isIn("profile_id", listOf(NO_MATCH_PROFILE_ID))
+                            } else {
+                                isIn("profile_id", friendProfileIds)
+                            }
+                        }
+                    }
+                }
+
                 order(
                     column = "created_at",
                     order = Order.DESCENDING
@@ -116,32 +146,8 @@ class FeedRepository {
 
                 limit(50)
             }
-            .decodeList<FeedPost>()
 
-        val authorProfiles = getAuthorProfiles(posts)
-        val reactionsByPostId = getReactionsByPostId(posts)
-        val commentsByPostId = getCommentsByPostId(posts)
-
-        return posts
-            .map { post ->
-                val authorProfile = authorProfiles[post.profileId]
-                val reactions = reactionsByPostId[post.id].orEmpty()
-                val comments = commentsByPostId[post.id].orEmpty()
-
-                post.copy(
-                    resolvedMediaUrl = resolveMediaUrl(post.mediaUrl),
-                    authorDisplayName = authorProfile?.displayName,
-                    authorAvatarUrl = resolveAvatarUrl(authorProfile?.avatarUrl),
-                    reactionCount = reactions.size,
-                    isReactedByCurrentUser = currentUserId?.let { userId ->
-                        reactions.any { reaction ->
-                            reaction.profileId == userId && reaction.reaction == FEED_REACTION_LIKE
-                        }
-                    } ?: false,
-                    isReactionPending = false,
-                    commentCount = comments.size
-                )
-            }
+        return enrichPosts(postsQuery.decodeList())
     }
 
     suspend fun getFeedPost(
@@ -418,6 +424,29 @@ class FeedRepository {
             .associateBy { profile -> profile.id }
     }
 
+    private suspend fun getAcceptedFriendProfileIds(): List<String> {
+        val currentUserId = client.auth.currentUserOrNull()?.id
+            ?: error("Sign in to view posts from friends.")
+
+        return client
+            .from("connections")
+            .select()
+            .decodeList<FeedConnectionRow>()
+            .filter { connection ->
+                connection.status == CONNECTION_STATUS_ACCEPTED &&
+                    (connection.fromProfileId == currentUserId ||
+                        connection.toProfileId == currentUserId)
+            }
+            .map { connection ->
+                if (connection.fromProfileId == currentUserId) {
+                    connection.toProfileId
+                } else {
+                    connection.fromProfileId
+                }
+            }
+            .distinct()
+    }
+
     private suspend fun enrichPosts(
         posts: List<FeedPost>
     ): List<FeedPost> {
@@ -584,7 +613,14 @@ class FeedRepository {
         const val MAX_TITLE_LENGTH = 80
         const val MAX_COMMENT_LENGTH = 1000
         const val FEED_REACTION_LIKE = "like"
+        const val CONNECTION_STATUS_ACCEPTED = "accepted"
+        const val NO_MATCH_PROFILE_ID = "00000000-0000-0000-0000-000000000000"
     }
+}
+
+enum class FeedFilter {
+    DISCOVER,
+    FRIENDS
 }
 
 private fun isDuplicateReactionError(

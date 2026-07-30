@@ -2,6 +2,7 @@ package com.gamerconnect.testclient.feature.feed
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.gamerconnect.testclient.data.feed.FeedFilter
 import com.gamerconnect.testclient.data.feed.FeedGame
 import com.gamerconnect.testclient.data.feed.FeedImageUpload
 import com.gamerconnect.testclient.data.feed.FeedPost
@@ -12,12 +13,40 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class FeedUiState(
+enum class FeedTab(
+    val label: String,
+    val emptyMessage: String,
+    val filter: FeedFilter
+) {
+    DISCOVER(
+        label = "Discover",
+        emptyMessage = "No posts yet.",
+        filter = FeedFilter.DISCOVER
+    ),
+    FRIENDS(
+        label = "Friends",
+        emptyMessage = "No posts from friends yet.",
+        filter = FeedFilter.FRIENDS
+    )
+}
+
+data class FeedTabState(
     val posts: List<FeedPost> = emptyList(),
-    val isLoading: Boolean = true,
+    val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val reactionErrorMessage: String? = null
+    val hasLoaded: Boolean = false
 )
+
+data class FeedUiState(
+    val selectedTab: FeedTab = FeedTab.DISCOVER,
+    val tabStates: Map<FeedTab, FeedTabState> = FeedTab.entries.associateWith {
+        FeedTabState()
+    },
+    val reactionErrorMessage: String? = null
+) {
+    val currentTabState: FeedTabState
+        get() = tabStates[selectedTab] ?: FeedTabState()
+}
 
 data class CreateFeedPostUiState(
     val title: String = "",
@@ -43,34 +72,58 @@ class FeedViewModel(
         _createPostUiState.asStateFlow()
 
     init {
-        loadPosts()
+        loadPosts(FeedTab.DISCOVER)
         loadAvailableGames()
     }
 
-    fun loadPosts() {
+    fun selectTab(
+        tab: FeedTab
+    ) {
+        _uiState.update {
+            it.copy(selectedTab = tab)
+        }
+
+        if (!_uiState.value.currentTabState.hasLoaded) {
+            loadPosts(tab)
+        }
+    }
+
+    fun loadPosts(
+        tab: FeedTab = _uiState.value.selectedTab
+    ) {
         viewModelScope.launch {
             _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    errorMessage = null
+                it.updateTab(
+                    tab = tab,
+                    tabState = (it.tabStates[tab] ?: FeedTabState()).copy(
+                        isLoading = true,
+                        errorMessage = null
+                    )
                 )
             }
 
             runCatching {
-                repository.getFeedPosts()
+                repository.getFeedPosts(tab.filter)
             }.onSuccess { posts ->
                 _uiState.update {
-                    it.copy(
-                        posts = posts,
-                        isLoading = false
+                    it.updateTab(
+                        tab = tab,
+                        tabState = FeedTabState(
+                            posts = posts,
+                            isLoading = false,
+                            hasLoaded = true
+                        )
                     )
                 }
             }.onFailure { error ->
                 _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = error.message
-                            ?: "Unable to load feed."
+                    it.updateTab(
+                        tab = tab,
+                        tabState = (it.tabStates[tab] ?: FeedTabState()).copy(
+                            isLoading = false,
+                            errorMessage = friendlyFeedLoadError(tab, error),
+                            hasLoaded = true
+                        )
                     )
                 }
             }
@@ -80,7 +133,7 @@ class FeedViewModel(
     fun toggleReaction(
         postId: String
     ) {
-        val currentPosts = _uiState.value.posts
+        val currentPosts = _uiState.value.currentTabState.posts
         val targetPost = currentPosts.firstOrNull { post ->
             post.id == postId
         } ?: return
@@ -90,25 +143,22 @@ class FeedViewModel(
         }
 
         val nextReactedState = !targetPost.isReactedByCurrentUser
-        val optimisticPosts = currentPosts.map { post ->
-            if (post.id == postId) {
-                post.copy(
-                    isReactedByCurrentUser = nextReactedState,
-                    reactionCount = if (nextReactedState) {
-                        post.reactionCount + 1
-                    } else {
-                        (post.reactionCount - 1).coerceAtLeast(0)
-                    },
-                    isReactionPending = true
-                )
+        val optimisticPost = targetPost.copy(
+            isReactedByCurrentUser = nextReactedState,
+            reactionCount = if (nextReactedState) {
+                targetPost.reactionCount + 1
             } else {
-                post
-            }
-        }
+                (targetPost.reactionCount - 1).coerceAtLeast(0)
+            },
+            isReactionPending = true
+        )
 
         _uiState.update {
             it.copy(
-                posts = optimisticPosts,
+                tabStates = it.updatePostInAllTabs(
+                    postId = postId,
+                    replacement = optimisticPost
+                ),
                 reactionErrorMessage = null
             )
         }
@@ -123,25 +173,21 @@ class FeedViewModel(
             }.onSuccess {
                 _uiState.update { state ->
                     state.copy(
-                        posts = state.posts.map { post ->
-                            if (post.id == postId) {
+                        tabStates = state.updatePostInAllTabs(
+                            postId = postId,
+                            transform = { post ->
                                 post.copy(isReactionPending = false)
-                            } else {
-                                post
                             }
-                        }
+                        )
                     )
                 }
             }.onFailure { error ->
                 _uiState.update { state ->
                     state.copy(
-                        posts = state.posts.map { post ->
-                            if (post.id == postId) {
-                                targetPost.copy(isReactionPending = false)
-                            } else {
-                                post
-                            }
-                        },
+                        tabStates = state.updatePostInAllTabs(
+                            postId = postId,
+                            replacement = targetPost.copy(isReactionPending = false)
+                        ),
                         reactionErrorMessage = friendlyReactionError(error)
                     )
                 }
@@ -325,5 +371,62 @@ class FeedViewModel(
             "sign in" in message -> "Sign in to react to posts."
             else -> "Couldn't update reaction. Try again."
         }
+    }
+
+    private fun friendlyFeedLoadError(
+        tab: FeedTab,
+        error: Throwable
+    ): String {
+        val message = error.message.orEmpty().lowercase()
+
+        if ("sign in" in message) {
+            return when (tab) {
+                FeedTab.DISCOVER -> "Sign in to view this feed."
+                FeedTab.FRIENDS -> "Sign in to view posts from friends."
+            }
+        }
+
+        return when (tab) {
+            FeedTab.DISCOVER -> "Couldn't load this feed. Try again."
+            FeedTab.FRIENDS -> "Couldn't load posts from friends."
+        }
+    }
+}
+
+private fun FeedUiState.updateTab(
+    tab: FeedTab,
+    tabState: FeedTabState
+): FeedUiState {
+    return copy(
+        tabStates = tabStates + (tab to tabState)
+    )
+}
+
+private fun FeedUiState.updatePostInAllTabs(
+    postId: String,
+    replacement: FeedPost
+): Map<FeedTab, FeedTabState> {
+    return updatePostInAllTabs(
+        postId = postId,
+        transform = {
+            replacement
+        }
+    )
+}
+
+private fun FeedUiState.updatePostInAllTabs(
+    postId: String,
+    transform: (FeedPost) -> FeedPost
+): Map<FeedTab, FeedTabState> {
+    return tabStates.mapValues { (_, tabState) ->
+        tabState.copy(
+            posts = tabState.posts.map { post ->
+                if (post.id == postId) {
+                    transform(post)
+                } else {
+                    post
+                }
+            }
+        )
     }
 }

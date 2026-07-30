@@ -1,6 +1,7 @@
 package com.gamerconnect.testclient.feature.feed
 
 import android.util.Log
+import android.view.ViewGroup
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -16,15 +17,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,9 +48,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 
 
 @Composable
@@ -58,7 +66,17 @@ fun FeedScreen(
     feedViewModel: FeedViewModel = viewModel()
 ) {
     val uiState = feedViewModel.uiState.collectAsStateWithLifecycle().value
+    val currentTabState = uiState.currentTabState
     val context = LocalContext.current
+    val discoverListState = rememberLazyListState()
+    val friendsListState = rememberLazyListState()
+    var playingPostId by remember {
+        mutableStateOf<String?>(null)
+    }
+    val listState = when (uiState.selectedTab) {
+        FeedTab.DISCOVER -> discoverListState
+        FeedTab.FRIENDS -> friendsListState
+    }
 
     LaunchedEffect(refreshKey) {
         if (refreshKey > 0) {
@@ -98,51 +116,47 @@ fun FeedScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                FeedTab(
-                    title = "For You",
-                    selected = true
-                )
-
-                FeedTab(
-                    title = "Following",
-                    selected = false
-                )
-
-                FeedTab(
-                    title = "Groups",
-                    selected = false
-                )
+                FeedTab.entries.forEach { tab ->
+                    FeedTabButton(
+                        title = tab.label,
+                        selected = uiState.selectedTab == tab,
+                        onClick = {
+                            feedViewModel.selectTab(tab)
+                        }
+                    )
+                }
             }
 
             when {
-                uiState.isLoading -> {
+                currentTabState.isLoading -> {
                     Text(
                         text = "Loading feed...",
                         color = Color.White
                     )
                 }
 
-                uiState.errorMessage != null -> {
+                currentTabState.errorMessage != null -> {
                     Text(
-                        text = uiState.errorMessage,
+                        text = currentTabState.errorMessage,
                         color = MaterialTheme.colorScheme.error
                     )
                 }
 
-                uiState.posts.isEmpty() -> {
+                currentTabState.posts.isEmpty() -> {
                     Text(
-                        text = "No posts yet.",
+                        text = uiState.selectedTab.emptyMessage,
                         color = Color(0xFF9CA3AF)
                     )
                 }
 
                 else -> {
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         items(
-                            items = uiState.posts,
+                            items = currentTabState.posts,
                             key = { post -> post.id }
                         ) { post ->
                             FeedPostCard(
@@ -153,6 +167,10 @@ fun FeedScreen(
                                 authorAvatarUrl = post.authorAvatarUrl,
                                 mediaUrl = post.resolvedMediaUrl,
                                 mediaType = post.mediaType,
+                                isVideoPlaying = playingPostId == post.id,
+                                onPlayVideo = {
+                                    playingPostId = post.id
+                                },
                                 createdAt = post.createdAt,
                                 reactionCount = post.reactionCount,
                                 isReactedByCurrentUser = post.isReactedByCurrentUser,
@@ -192,29 +210,30 @@ fun FeedScreen(
 }
 
 @Composable
-private fun FeedTab(
+private fun FeedTabButton(
     title: String,
-    selected: Boolean
+    selected: Boolean,
+    onClick: () -> Unit
 ) {
-    Card(
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.semantics {
+            contentDescription = "$title tab"
+        },
+        colors = ButtonDefaults.textButtonColors(
             containerColor = if (selected) {
                 MaterialTheme.colorScheme.primary
             } else {
                 Color.Transparent
             }
-        )
+        ),
+        shape = RoundedCornerShape(10.dp)
     ) {
         Text(
             text = title,
             color = if (selected) Color.White else Color(0xFFB8BFCC),
             fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(
-                horizontal = 18.dp,
-                vertical = 10.dp
-            )
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
         )
     }
 }
@@ -227,6 +246,8 @@ private fun FeedPostCard(
     authorAvatarUrl: String?,
     mediaUrl: String?,
     mediaType: String?,
+    isVideoPlaying: Boolean,
+    onPlayVideo: () -> Unit,
     createdAt: String,
     reactionCount: Int,
     isReactedByCurrentUser: Boolean,
@@ -270,6 +291,8 @@ private fun FeedPostCard(
                     mediaUrl = mediaUrl,
                     mediaType = mediaType,
                     authorName = authorDisplayName,
+                    isVideoPlaying = isVideoPlaying,
+                    onPlayVideo = onPlayVideo,
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
@@ -438,6 +461,8 @@ private fun FeedMedia(
     mediaUrl: String,
     mediaType: String?,
     authorName: String?,
+    isVideoPlaying: Boolean,
+    onPlayVideo: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     when (feedMediaKind(mediaType, mediaUrl)) {
@@ -447,8 +472,11 @@ private fun FeedMedia(
             modifier = modifier
         )
 
-        FeedMediaKind.Video -> FeedMediaFallback(
-            text = "Video preview coming soon",
+        FeedMediaKind.Video -> FeedVideoPlayer(
+            mediaUrl = mediaUrl,
+            authorName = authorName,
+            isPlaying = isVideoPlaying,
+            onPlay = onPlayVideo,
             modifier = modifier
         )
 
@@ -459,6 +487,150 @@ private fun FeedMedia(
     }
 }
 
+@Composable
+private fun FeedVideoPlayer(
+    mediaUrl: String,
+    authorName: String?,
+    isPlaying: Boolean,
+    onPlay: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var player by remember(mediaUrl) {
+        mutableStateOf<ExoPlayer?>(null)
+    }
+    var isMuted by remember(mediaUrl) {
+        mutableStateOf(true)
+    }
+    val maxMediaHeight = LocalConfiguration.current.screenHeightDp.dp * 0.48f
+
+    LaunchedEffect(isPlaying, mediaUrl) {
+        if (isPlaying) {
+            if (player == null) {
+                player = ExoPlayer.Builder(context).build().apply {
+                    setMediaItem(MediaItem.fromUri(mediaUrl))
+                    volume = 0f
+                    playWhenReady = true
+                    prepare()
+                }
+                isMuted = true
+            } else {
+                player?.playWhenReady = true
+                player?.play()
+            }
+        } else {
+            player?.release()
+            player = null
+        }
+    }
+
+    LaunchedEffect(isMuted, player) {
+        player?.volume = if (isMuted) 0f else 1f
+    }
+
+    DisposableEffect(mediaUrl) {
+        onDispose {
+            player?.release()
+            player = null
+        }
+    }
+
+    BoxWithConstraints(
+        modifier = modifier.fillMaxWidth()
+    ) {
+        val previewHeight = (maxWidth / (16f / 9f))
+            .coerceAtMost(maxMediaHeight)
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(previewHeight)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFF111A2B)),
+            contentAlignment = Alignment.Center
+        ) {
+            val activePlayer = player
+
+            if (activePlayer != null) {
+                AndroidView(
+                    factory = { viewContext ->
+                        PlayerView(viewContext).apply {
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            useController = true
+                            this.player = activePlayer
+                        }
+                    },
+                    update = { playerView ->
+                        playerView.player = activePlayer
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                TextButton(
+                    onClick = {
+                        isMuted = !isMuted
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .semantics {
+                            contentDescription = if (isMuted) {
+                                "Enable video sound"
+                            } else {
+                                "Mute video sound"
+                            }
+                        },
+                    shape = RoundedCornerShape(999.dp),
+                    colors = ButtonDefaults.textButtonColors(
+                        containerColor = Color(0xCC070B14)
+                    )
+                ) {
+                    Text(
+                        text = if (isMuted) "Muted" else "Sound on",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = "Video attached",
+                        color = Color(0xFFB8BFCC),
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    TextButton(
+                        onClick = onPlay,
+                        modifier = Modifier.semantics {
+                            contentDescription = authorName?.let {
+                                "Play $it feed post video"
+                            } ?: "Play feed post video"
+                        },
+                        shape = RoundedCornerShape(999.dp),
+                        colors = ButtonDefaults.textButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text(
+                            text = "Play",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 @Composable
 private fun FeedMediaPreview(
     mediaUrl: String,
@@ -592,3 +764,4 @@ private enum class FeedMediaKind {
     Video,
     Unknown
 }
+
