@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.layout.Box
@@ -42,6 +43,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
+import com.gamerconnect.testclient.data.messages.TypingUser
 
 
 
@@ -59,15 +61,18 @@ fun ChatScreen(
         .collectAsStateWithLifecycle()
         .value
 
-    var messageText by remember {
-        mutableStateOf("")
-    }
-
     val listState = rememberLazyListState()
 
     LaunchedEffect(conversationId) {
         chatViewModel.loadMessages(conversationId)
         chatViewModel.observeMessages(conversationId)
+        chatViewModel.observeTyping(conversationId)
+    }
+
+    DisposableEffect(conversationId) {
+        onDispose {
+            chatViewModel.leaveConversation(conversationId)
+        }
     }
 
     LaunchedEffect(
@@ -241,14 +246,25 @@ fun ChatScreen(
             }
         }
 
+        TypingIndicator(
+            typingUsers = uiState.typingUsers,
+            conversationType = conversationType,
+            modifier = Modifier.fillMaxWidth()
+        )
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
-                value = messageText,
-                onValueChange = { messageText = it },
+                value = uiState.messageDraft,
+                onValueChange = { draft ->
+                    chatViewModel.updateDraft(
+                        conversationId = conversationId,
+                        draft = draft
+                    )
+                },
                 label = {
                     Text("Message")
                 },
@@ -259,14 +275,13 @@ fun ChatScreen(
                 onClick = {
                     chatViewModel.sendMessage(
                         conversationId = conversationId,
-                        body = messageText,
+                        body = uiState.messageDraft,
                         onSuccess = {
-                            messageText = ""
                         }
                     )
                 },
                 enabled =
-                    messageText.isNotBlank() &&
+                    uiState.messageDraft.isNotBlank() &&
                             !uiState.isSending,
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -284,6 +299,52 @@ fun ChatScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun TypingIndicator(
+    typingUsers: List<TypingUser>,
+    conversationType: String,
+    modifier: Modifier = Modifier
+) {
+    val indicatorText = formatTypingIndicator(
+        typingUsers = typingUsers,
+        conversationType = conversationType
+    )
+
+    if (indicatorText != null) {
+        Text(
+            text = indicatorText,
+            color = Color(0xFFB8BFCC),
+            fontSize = 13.sp,
+            modifier = modifier.padding(horizontal = 4.dp)
+        )
+    } else {
+        Spacer(
+            modifier = modifier.size(1.dp)
+        )
+    }
+}
+
+private fun formatTypingIndicator(
+    typingUsers: List<TypingUser>,
+    conversationType: String
+): String? {
+    val names = typingUsers
+        .distinctBy { user -> user.profileId }
+        .map { user -> user.displayName.trim() }
+        .filter { name -> name.isNotBlank() }
+
+    if (names.isEmpty()) {
+        return null
+    }
+
+    return when {
+        names.size == 1 -> "${names.first()} is typing..."
+        conversationType == "group" && names.size == 2 -> "${names[0]} and ${names[1]} are typing..."
+        names.size == 2 -> "${names[0]} is typing..."
+        else -> "Several people are typing..."
     }
 }
 
