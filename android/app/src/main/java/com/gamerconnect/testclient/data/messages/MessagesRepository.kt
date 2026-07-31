@@ -98,6 +98,15 @@ data class TypingUser(
     val expiresAtMillis: Long
 )
 
+data class MessageSearchResult(
+    val messageId: String,
+    val conversationId: String,
+    val senderProfileId: String,
+    val senderName: String,
+    val body: String,
+    val createdAt: String
+)
+
 @Serializable
 private data class ConversationTypingRow(
     @SerialName("conversation_id")
@@ -504,6 +513,72 @@ class MessagesRepository {
                     ?: "Unknown player",
                 senderAvatarUrl = senderProfile?.avatarUrl,
                 isSeen = isSeen
+            )
+        }
+    }
+
+    suspend fun searchMessages(
+        conversationId: String,
+        query: String,
+        limit: Int = 25
+    ): List<MessageSearchResult> {
+        require(conversationId.isNotBlank()) {
+            "Conversation ID is required."
+        }
+
+        val safeQuery = query
+            .trim()
+            .take(80)
+
+        if (safeQuery.isBlank()) {
+            return emptyList()
+        }
+
+        val messages = client
+            .from("messages")
+            .select {
+                filter {
+                    eq("conversation_id", conversationId)
+                    ilike("body", "%$safeQuery%")
+                }
+
+                order(
+                    column = "created_at",
+                    order = Order.DESCENDING
+                )
+
+                limit(limit.coerceIn(1, 50).toLong())
+            }
+            .decodeList<ChatMessage>()
+
+        if (messages.isEmpty()) {
+            return emptyList()
+        }
+
+        val senderIds = messages
+            .map { message -> message.senderProfileId }
+            .distinct()
+
+        val senderProfiles = client
+            .from("profiles")
+            .select {
+                filter {
+                    isIn("id", senderIds)
+                }
+            }
+            .decodeList<MessageSenderProfile>()
+            .associateBy { profile -> profile.id }
+
+        return messages.map { message ->
+            MessageSearchResult(
+                messageId = message.id,
+                conversationId = message.conversationId,
+                senderProfileId = message.senderProfileId,
+                senderName = senderProfiles[message.senderProfileId]
+                    ?.displayName
+                    ?: "Unknown player",
+                body = message.body,
+                createdAt = message.createdAt
             )
         }
     }

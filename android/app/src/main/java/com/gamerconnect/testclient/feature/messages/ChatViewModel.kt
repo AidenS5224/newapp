@@ -3,6 +3,7 @@ package com.gamerconnect.testclient.feature.messages
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gamerconnect.testclient.data.messages.ChatMessage
+import com.gamerconnect.testclient.data.messages.MessageSearchResult
 import com.gamerconnect.testclient.data.messages.MessagesRepository
 import com.gamerconnect.testclient.data.messages.TypingUser
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +27,14 @@ data class ChatUiState(
     val hasMoreMessages: Boolean = true,
     val errorMessage: String? = null,
     val isSending: Boolean = false,
-    val scrollToBottomSignal: Int = 0
+    val scrollToBottomSignal: Int = 0,
+    val isSearchMode: Boolean = false,
+    val searchQuery: String = "",
+    val searchResults: List<MessageSearchResult> = emptyList(),
+    val isSearching: Boolean = false,
+    val searchErrorMessage: String? = null,
+    val searchHighlightMessageId: String? = null,
+    val scrollToMessageId: String? = null
 )
 
 class ChatViewModel(
@@ -38,6 +46,8 @@ class ChatViewModel(
     private var typingIdleJob: Job? = null
     private var typingExpiryJob: Job? = null
     private var typingSendJob: Job? = null
+    private var searchJob: Job? = null
+    private var highlightJob: Job? = null
     private val messagePageSize = 50
     private var oldestLoadedPage = 0
     private var activeConversationId: String? = null
@@ -112,6 +122,151 @@ class ChatViewModel(
             conversationId = conversationId,
             draft = draft
         )
+    }
+
+    fun enterSearchMode() {
+        _uiState.update {
+            it.copy(
+                isSearchMode = true,
+                searchErrorMessage = null
+            )
+        }
+    }
+
+    fun closeSearchMode() {
+        searchJob?.cancel()
+        highlightJob?.cancel()
+        _uiState.update {
+            it.copy(
+                isSearchMode = false,
+                searchQuery = "",
+                searchResults = emptyList(),
+                isSearching = false,
+                searchErrorMessage = null,
+                searchHighlightMessageId = null,
+                scrollToMessageId = null
+            )
+        }
+    }
+
+    fun updateSearchQuery(
+        conversationId: String,
+        query: String
+    ) {
+        val safeQuery = query.take(MAX_SEARCH_QUERY_LENGTH)
+        searchJob?.cancel()
+
+        _uiState.update {
+            it.copy(
+                searchQuery = safeQuery,
+                searchErrorMessage = null
+            )
+        }
+
+        val trimmedQuery = safeQuery.trim()
+        if (trimmedQuery.isBlank()) {
+            _uiState.update {
+                it.copy(
+                    searchResults = emptyList(),
+                    isSearching = false
+                )
+            }
+            return
+        }
+
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MS)
+
+            _uiState.update {
+                it.copy(isSearching = true)
+            }
+
+            runCatching {
+                repository.searchMessages(
+                    conversationId = conversationId,
+                    query = trimmedQuery,
+                    limit = SEARCH_RESULT_LIMIT
+                )
+            }.onSuccess { results ->
+                if (_uiState.value.searchQuery.trim() == trimmedQuery) {
+                    _uiState.update {
+                        it.copy(
+                            searchResults = results,
+                            isSearching = false,
+                            searchErrorMessage = null
+                        )
+                    }
+                }
+            }.onFailure {
+                _uiState.update {
+                    it.copy(
+                        searchResults = emptyList(),
+                        isSearching = false,
+                        searchErrorMessage =
+                            "Unable to search messages right now."
+                    )
+                }
+            }
+        }
+    }
+
+    fun selectSearchResult(
+        conversationId: String,
+        result: MessageSearchResult
+    ) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    searchResults = emptyList(),
+                    searchErrorMessage = null
+                )
+            }
+
+            val loaded = ensureMessageLoaded(
+                conversationId = conversationId,
+                messageId = result.messageId
+            )
+
+            if (!loaded) {
+                _uiState.update {
+                    it.copy(
+                        searchErrorMessage =
+                            "That message is too far back to load quickly."
+                    )
+                }
+                return@launch
+            }
+
+            highlightJob?.cancel()
+            _uiState.update {
+                it.copy(
+                    isSearchMode = false,
+                    searchQuery = "",
+                    searchResults = emptyList(),
+                    isSearching = false,
+                    searchErrorMessage = null,
+                    searchHighlightMessageId = result.messageId,
+                    scrollToMessageId = result.messageId
+                )
+            }
+
+            highlightJob = viewModelScope.launch {
+                delay(SEARCH_HIGHLIGHT_MS)
+                _uiState.update {
+                    if (it.searchHighlightMessageId == result.messageId) {
+                        it.copy(searchHighlightMessageId = null)
+                    } else {
+                        it
+                    }
+                }
+            }
+        }
+    }
+
+    fun consumeSearchScrollTarget() {
+        _uiState.update {
+            it.copy(scrollToMessageId = null)
+        }
     }
 
     fun sendMessage(
@@ -232,10 +387,19 @@ class ChatViewModel(
         if (activeConversationId != conversationId) {
             activeConversationId = conversationId
             oldestLoadedPage = 0
+            searchJob?.cancel()
+            highlightJob?.cancel()
             _uiState.update {
                 it.copy(
                     messageDraft = "",
-                    typingUsers = emptyList()
+                    typingUsers = emptyList(),
+                    isSearchMode = false,
+                    searchQuery = "",
+                    searchResults = emptyList(),
+                    isSearching = false,
+                    searchErrorMessage = null,
+                    searchHighlightMessageId = null,
+                    scrollToMessageId = null
                 )
             }
         }
@@ -289,11 +453,22 @@ class ChatViewModel(
         typingIdleJob = null
         typingSendJob?.cancel()
         typingSendJob = null
+        searchJob?.cancel()
+        searchJob = null
+        highlightJob?.cancel()
+        highlightJob = null
 
         _uiState.update {
             it.copy(
                 typingUsers = emptyList(),
-                messageDraft = ""
+                messageDraft = "",
+                isSearchMode = false,
+                searchQuery = "",
+                searchResults = emptyList(),
+                isSearching = false,
+                searchErrorMessage = null,
+                searchHighlightMessageId = null,
+                scrollToMessageId = null
             )
         }
 
@@ -321,6 +496,8 @@ class ChatViewModel(
         typingExpiryJob?.cancel()
         typingIdleJob?.cancel()
         typingSendJob?.cancel()
+        searchJob?.cancel()
+        highlightJob?.cancel()
 
         if (conversationId != null && isLocalTyping) {
             viewModelScope.launch {
@@ -454,11 +631,64 @@ class ChatViewModel(
         }
     }
 
+    private suspend fun ensureMessageLoaded(
+        conversationId: String,
+        messageId: String
+    ): Boolean {
+        if (_uiState.value.messages.any { message -> message.id == messageId }) {
+            return true
+        }
+
+        var page = oldestLoadedPage + 1
+
+        while (page <= MAX_SEARCH_LOOKUP_PAGE) {
+            val olderMessages = runCatching {
+                repository.getMessages(
+                    conversationId = conversationId,
+                    page = page,
+                    pageSize = messagePageSize
+                )
+            }.getOrElse {
+                return false
+            }
+
+            oldestLoadedPage = page
+
+            _uiState.update { currentState ->
+                currentState.copy(
+                    messages = (
+                            olderMessages + currentState.messages
+                            ).distinctBy { message -> message.id },
+                    hasMoreMessages =
+                        olderMessages.size == messagePageSize,
+                    errorMessage = null
+                )
+            }
+
+            if (olderMessages.any { message -> message.id == messageId }) {
+                return true
+            }
+
+            if (olderMessages.size < messagePageSize) {
+                return false
+            }
+
+            page += 1
+        }
+
+        return false
+    }
+
     private companion object {
         const val TYPING_TRUE_THROTTLE_MS = 1500L
         const val TYPING_IDLE_TIMEOUT_MS = 2500L
         const val TYPING_REMOTE_EXPIRY_MS = 7000L
         const val TYPING_EXPIRY_CHECK_MS = 1000L
+        const val SEARCH_DEBOUNCE_MS = 350L
+        const val SEARCH_HIGHLIGHT_MS = 3500L
+        const val SEARCH_RESULT_LIMIT = 25
+        const val MAX_SEARCH_QUERY_LENGTH = 80
+        const val MAX_SEARCH_LOOKUP_PAGE = 20
     }
 
 }

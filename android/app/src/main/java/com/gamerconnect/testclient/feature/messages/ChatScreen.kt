@@ -1,6 +1,9 @@
 package com.gamerconnect.testclient.feature.messages
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,6 +46,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.gamerconnect.testclient.data.messages.MessageSearchResult
 import com.gamerconnect.testclient.data.messages.TypingUser
 
 
@@ -89,6 +95,23 @@ fun ChatScreen(
         }
     }
 
+    LaunchedEffect(
+        uiState.scrollToMessageId,
+        uiState.messages
+    ) {
+        val targetMessageId = uiState.scrollToMessageId
+            ?: return@LaunchedEffect
+
+        val messageIndex = uiState.messages.indexOfFirst { message ->
+            message.id == targetMessageId
+        }
+
+        if (messageIndex >= 0) {
+            listState.animateScrollToItem(messageIndex + 1)
+            chatViewModel.consumeSearchScrollTarget()
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -96,32 +119,96 @@ fun ChatScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(
-                onClick = onBack,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF111827)
-                )
+        if (uiState.isSearchMode) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Back",
-                    color = Color.White
+                Button(
+                    onClick = {
+                        chatViewModel.closeSearchMode()
+                    },
+                    modifier = Modifier.semantics {
+                        contentDescription = "Close message search"
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF111827)
+                    )
+                ) {
+                    Text(
+                        text = "Close",
+                        color = Color.White
+                    )
+                }
+
+                OutlinedTextField(
+                    value = uiState.searchQuery,
+                    onValueChange = { query ->
+                        chatViewModel.updateSearchQuery(
+                            conversationId = conversationId,
+                            query = query
+                        )
+                    },
+                    label = {
+                        Text("Search messages")
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics {
+                            contentDescription =
+                                "Search this conversation"
+                        }
                 )
             }
-
-            if (conversationType == "group") {
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Button(
-                    onClick = onGroupDetailsClick,
+                    onClick = onBack,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF111827)
+                    )
+                ) {
+                    Text(
+                        text = "Back",
+                        color = Color.White
+                    )
+                }
+
+                if (conversationType == "group") {
+                    Button(
+                        onClick = onGroupDetailsClick,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF25104B)
+                        )
+                    ) {
+                        Text(
+                            text = "Group details",
+                            color = Color.White
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                Button(
+                    onClick = {
+                        chatViewModel.enterSearchMode()
+                    },
+                    modifier = Modifier.semantics {
+                        contentDescription = "Search messages"
+                    },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF25104B)
                     )
                 ) {
                     Text(
-                        text = "Group details",
+                        text = "Search",
                         color = Color.White
                     )
                 }
@@ -139,6 +226,21 @@ fun ChatScreen(
             color = Color(0xFF8D94A3),
             fontSize = 12.sp
         )
+
+        if (uiState.isSearchMode) {
+            MessageSearchResultsPanel(
+                query = uiState.searchQuery,
+                results = uiState.searchResults,
+                isSearching = uiState.isSearching,
+                errorMessage = uiState.searchErrorMessage,
+                onResultClick = { result ->
+                    chatViewModel.selectSearchResult(
+                        conversationId = conversationId,
+                        result = result
+                    )
+                }
+            )
+        }
 
         LazyColumn(
             state = listState,
@@ -239,7 +341,9 @@ fun ChatScreen(
                             senderAvatarUrl = message.senderAvatarUrl,
                             isCurrentUser =
                                 message.senderProfileId == uiState.currentUserId,
-                            isSeen = message.isSeen
+                            isSeen = message.isSeen,
+                            isHighlighted =
+                                message.id == uiState.searchHighlightMessageId
                         )
                     }
                 }
@@ -297,6 +401,109 @@ fun ChatScreen(
                     },
                     color = Color.White
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageSearchResultsPanel(
+    query: String,
+    results: List<MessageSearchResult>,
+    isSearching: Boolean,
+    errorMessage: String?,
+    onResultClick: (MessageSearchResult) -> Unit
+) {
+    val trimmedQuery = query.trim()
+
+    if (trimmedQuery.isBlank()) {
+        return
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = Color(0xFF0F172A),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        when {
+            isSearching -> {
+                Text(
+                    text = "Searching...",
+                    color = Color(0xFFB8BFCC),
+                    fontSize = 13.sp
+                )
+            }
+
+            errorMessage != null -> {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp
+                )
+            }
+
+            results.isEmpty() -> {
+                Text(
+                    text = "No matching messages.",
+                    color = Color(0xFFB8BFCC),
+                    fontSize = 13.sp
+                )
+            }
+
+            else -> {
+                Text(
+                    text = "${results.size} result(s)",
+                    color = Color(0xFFB8BFCC),
+                    fontSize = 12.sp
+                )
+
+                results.take(5).forEach { result ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                onResultClick(result)
+                            }
+                            .background(Color(0xFF111827))
+                            .padding(10.dp)
+                            .semantics {
+                                contentDescription =
+                                    "Search result from ${result.senderName}"
+                            },
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement =
+                                Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = result.senderName,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Text(
+                                text = formatSearchTimestamp(result.createdAt),
+                                color = Color(0xFF8D94A3),
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        Text(
+                            text = result.body.toSearchSnippet(),
+                            color = Color(0xFFB8BFCC),
+                            fontSize = 13.sp
+                        )
+                    }
+                }
             }
         }
     }
@@ -366,14 +573,46 @@ private fun formatMessageDateLabel(
     }
 }
 
+private fun formatSearchTimestamp(
+    timestamp: String
+): String {
+    return runCatching {
+        Instant.parse(timestamp)
+            .atZone(ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("d MMM, HH:mm"))
+    }.getOrDefault("")
+}
+
+private fun String.toSearchSnippet(): String {
+    val singleLine = trim()
+        .replace(Regex("\\s+"), " ")
+
+    return if (singleLine.length <= 90) {
+        singleLine
+    } else {
+        singleLine.take(87) + "..."
+    }
+}
+
 @Composable
 private fun MessageBubble(
     body: String,
     senderName: String?,
     senderAvatarUrl: String?,
     isCurrentUser: Boolean,
-    isSeen: Boolean
+    isSeen: Boolean,
+    isHighlighted: Boolean
 ) {
+    val bubbleColor by animateColorAsState(
+        targetValue = when {
+            isHighlighted -> Color(0xFF4C1D95)
+            isCurrentUser -> MaterialTheme.colorScheme.primary
+            else -> Color(0xFF111827)
+        },
+        animationSpec = tween(durationMillis = 250),
+        label = "messageHighlightColor"
+    )
+
     Box(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = if (isCurrentUser) {
@@ -402,17 +641,18 @@ private fun MessageBubble(
                 modifier = Modifier
                     .widthIn(max = 280.dp)
                     .background(
-                        color = if (isCurrentUser) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            Color(0xFF111827)
-                        },
+                        color = bubbleColor,
                         shape = RoundedCornerShape(18.dp)
                     )
                     .padding(
                         horizontal = 14.dp,
                         vertical = 10.dp
                     )
+                    .semantics {
+                        if (isHighlighted) {
+                            contentDescription = "Highlighted message"
+                        }
+                    }
             ) {
                 if (!isCurrentUser && !senderName.isNullOrBlank()) {
                     Text(
