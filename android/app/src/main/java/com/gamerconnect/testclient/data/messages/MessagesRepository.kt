@@ -92,6 +92,27 @@ data class GroupMember(
     val joinedAt: String
 )
 
+data class TypingUser(
+    val profileId: String,
+    val displayName: String,
+    val expiresAtMillis: Long
+)
+
+@Serializable
+private data class ConversationTypingRow(
+    @SerialName("conversation_id")
+    val conversationId: String,
+
+    @SerialName("profile_id")
+    val profileId: String,
+
+    @SerialName("is_typing")
+    val isTyping: Boolean,
+
+    @SerialName("expires_at")
+    val expiresAt: String
+)
+
 @Serializable
 private data class UnreadMessageRow(
     @SerialName("conversation_id")
@@ -230,6 +251,144 @@ class MessagesRepository {
                 client.realtime.removeChannel(channel)
             }
         }
+    }
+
+    fun observeTypingChanges(
+        conversationId: String
+    ): Flow<Unit> = callbackFlow {
+        require(conversationId.isNotBlank()) {
+            "Conversation ID is required."
+        }
+
+        client.realtime.connect()
+
+        val channel = client.realtime.channel(
+            channelId = "typing-$conversationId-${UUID.randomUUID()}"
+        )
+
+        val inserts = channel.postgresChangeFlow<PostgresAction.Insert>(
+            schema = "public"
+        ) {
+            table = "conversation_typing"
+        }
+
+        val updates = channel.postgresChangeFlow<PostgresAction.Update>(
+            schema = "public"
+        ) {
+            table = "conversation_typing"
+        }
+
+        val deletes = channel.postgresChangeFlow<PostgresAction.Delete>(
+            schema = "public"
+        ) {
+            table = "conversation_typing"
+        }
+
+        val insertJob = launch {
+            inserts.collect {
+                trySend(Unit)
+            }
+        }
+
+        val updateJob = launch {
+            updates.collect {
+                trySend(Unit)
+            }
+        }
+
+        val deleteJob = launch {
+            deletes.collect {
+                trySend(Unit)
+            }
+        }
+
+        channel.subscribe(blockUntilSubscribed = true)
+
+        awaitClose {
+            insertJob.cancel()
+            updateJob.cancel()
+            deleteJob.cancel()
+
+            launch {
+                client.realtime.removeChannel(channel)
+            }
+        }
+    }
+
+    suspend fun getTypingUsers(
+        conversationId: String
+    ): List<TypingUser> {
+        val currentUserId = client.auth.currentUserOrNull()?.id
+            ?: error("No signed-in user.")
+
+        require(conversationId.isNotBlank()) {
+            "Conversation ID is required."
+        }
+
+        val now = Instant.now()
+        val rows = client
+            .from("conversation_typing")
+            .select {
+                filter {
+                    eq("conversation_id", conversationId)
+                    eq("is_typing", true)
+                    gt("expires_at", now.toString())
+                    neq("profile_id", currentUserId)
+                }
+            }
+            .decodeList<ConversationTypingRow>()
+
+        if (rows.isEmpty()) {
+            return emptyList()
+        }
+
+        val profileIds = rows
+            .map { row -> row.profileId }
+            .distinct()
+
+        val profiles = client
+            .from("profiles")
+            .select {
+                filter {
+                    isIn("id", profileIds)
+                }
+            }
+            .decodeList<MessageSenderProfile>()
+            .associateBy { profile -> profile.id }
+
+        return rows
+            .mapNotNull { row ->
+                val expiresAt = runCatching {
+                    Instant.parse(row.expiresAt)
+                }.getOrNull() ?: return@mapNotNull null
+
+                TypingUser(
+                    profileId = row.profileId,
+                    displayName = profiles[row.profileId]?.displayName
+                        ?: "Someone",
+                    expiresAtMillis = expiresAt.toEpochMilli()
+                )
+            }
+            .distinctBy { user -> user.profileId }
+    }
+
+    suspend fun setTyping(
+        conversationId: String,
+        isTyping: Boolean,
+        expiresAt: Instant
+    ) {
+        require(conversationId.isNotBlank()) {
+            "Conversation ID is required."
+        }
+
+        client.postgrest.rpc(
+            function = "set_conversation_typing",
+            parameters = buildJsonObject {
+                put("target_conversation_id", conversationId)
+                put("target_is_typing", isTyping)
+                put("target_expires_at", expiresAt.toString())
+            }
+        )
     }
 
     suspend fun sendMessage(
